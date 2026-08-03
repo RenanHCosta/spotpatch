@@ -6,6 +6,7 @@ import { Status } from "@/components/status";
 import { api } from "@/lib/api";
 import { Badge, Button, Card } from "@spotpatch/ui";
 import { ArrowLeft, CheckCircle2, Code2, ExternalLink, Play } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 type Detail = {
   id: string;
@@ -29,7 +30,7 @@ type Detail = {
     attributes: Record<string, string>;
     computedStyles: Record<string, string>;
     parentContext: unknown[];
-    boundingBox: unknown;
+    boundingBox: { width: number; height: number };
   };
   code_search_hints: Array<{ type: string; value: string; weight: number }>;
   project: { name: string };
@@ -61,6 +62,11 @@ type Detail = {
     payload: unknown;
   }>;
 };
+type SignedScreenshots = {
+  viewportUrl: string | null;
+  elementUrl: string | null;
+  expiresIn: number;
+};
 export default function Feedback() {
   const { id } = useParams<{ id: string }>(),
     client = useQueryClient();
@@ -87,6 +93,13 @@ export default function Feedback() {
         body: "{}",
       }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["feedback", id] }),
+  });
+  const screenshots = useQuery({
+    queryKey: ["feedback-screenshots", id],
+    queryFn: () => api<SignedScreenshots>(`/api/admin/feedback/${id}/screenshots`),
+    enabled: Boolean(query.data),
+    staleTime: 4 * 60 * 1000,
+    refetchInterval: 4 * 60 * 1000,
   });
   if (query.isLoading)
     return (
@@ -156,17 +169,76 @@ export default function Feedback() {
             )}
           </Card>
           <Card className="overflow-hidden">
-            <div className="spot-grid grid aspect-video place-items-center bg-slate-100">
-              <div className="rounded-xl border bg-white p-5 text-center shadow-sm">
-                <Code2 className="mx-auto text-patch" />
-                <p className="mt-2 text-sm font-bold">Captura privada</p>
-                <p className="text-xs text-slate-500">
-                  {d.screenshot_path
-                    ? "Disponível via URL assinada no servidor"
-                    : "Screenshot indisponível neste feedback"}
-                </p>
-              </div>
+            <div className="border-b p-5">
+              <p className="text-xs font-bold uppercase text-slate-500">Captura da viewport</p>
+              <p className="mt-1 text-sm text-slate-500">Arquivo privado com acesso temporário.</p>
             </div>
+            {screenshots.data?.viewportUrl ? (
+              <a
+                href={screenshots.data.viewportUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="block bg-slate-100"
+              >
+                <Image
+                  src={screenshots.data.viewportUrl}
+                  alt={`Screenshot da página do feedback ${d.public_number}`}
+                  width={Math.max(1, d.viewport.width)}
+                  height={Math.max(1, d.viewport.height)}
+                  className="max-h-[720px] w-full object-contain"
+                  referrerPolicy="no-referrer"
+                  unoptimized
+                />
+              </a>
+            ) : (
+              <div className="spot-grid grid aspect-video place-items-center bg-slate-100">
+                <div className="rounded-xl border bg-white p-5 text-center shadow-sm">
+                  <Code2 className="mx-auto text-patch" />
+                  <p className="mt-2 text-sm font-bold">
+                    {screenshots.isLoading ? "Carregando captura…" : "Captura indisponível"}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {screenshots.error
+                      ? "Não foi possível gerar a URL temporária."
+                      : d.screenshot_path
+                        ? "A captura privada não pôde ser carregada."
+                        : "Este feedback não possui screenshot da viewport."}
+                  </p>
+                  {screenshots.error && (
+                    <button
+                      type="button"
+                      className="mt-3 text-xs font-bold text-patch"
+                      onClick={() => void screenshots.refetch()}
+                    >
+                      Tentar novamente
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {screenshots.data?.elementUrl && (
+              <div className="border-t p-5">
+                <p className="mb-3 text-xs font-bold uppercase text-slate-500">
+                  Recorte do elemento
+                </p>
+                <a
+                  href={screenshots.data.elementUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block overflow-hidden rounded-xl border bg-slate-100"
+                >
+                  <Image
+                    src={screenshots.data.elementUrl}
+                    alt={`Recorte do elemento do feedback ${d.public_number}`}
+                    width={Math.max(1, Math.round(d.element.boundingBox.width))}
+                    height={Math.max(1, Math.round(d.element.boundingBox.height))}
+                    className="max-h-96 w-full object-contain"
+                    referrerPolicy="no-referrer"
+                    unoptimized
+                  />
+                </a>
+              </div>
+            )}
             <div className="border-t p-5 text-sm">
               <a href={d.page_url} target="_blank" className="font-semibold text-patch">
                 {d.page_url}
