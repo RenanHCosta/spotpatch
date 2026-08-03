@@ -1,0 +1,32 @@
+{
+  "name": "@spotpatch/extension",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wxt --port 3002",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests --pool=threads --poolOptions.threads.singleThread"
+  },
+  "dependencies": {
+    "@spotpatch/extension-core": "workspace:*",
+    "@spotpatch/security": "workspace:*",
+    "@spotpatch/shared": "workspace:*",
+    "@spotpatch/ui": "workspace:*",
+    "@wxt-dev/module-react": "1.1.3",
+    "lucide-react": "0.522.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "wxt": "0.20.6"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.326",
+    "@types/react": "19.1.8",
+    "@types/react-dom": "19.1.6",
+    "eslint": "9.29.0",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4"
+  }
+}

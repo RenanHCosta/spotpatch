@@ -1,0 +1,25 @@
+{
+  "name": "@spotpatch/extension-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --pool=threads --poolOptions.threads.singleThread"
+  },
+  "dependencies": {
+    "@spotpatch/security": "workspace:*",
+    "@spotpatch/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "eslint": "9.29.0",
+    "jsdom": "26.1.0",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4"
+  }
+}

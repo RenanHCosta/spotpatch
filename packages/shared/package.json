@@ -1,0 +1,24 @@
+{
+  "name": "@spotpatch/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "lint": "eslint src --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --pool=threads --poolOptions.threads.singleThread"
+  },
+  "dependencies": {
+    "zod": "3.25.67"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.32",
+    "eslint": "9.29.0",
+    "typescript": "5.8.3",
+    "vitest": "3.2.4"
+  }
+}
