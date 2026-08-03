@@ -31,6 +31,7 @@ class Inspector {
   private shadow: ShadowRoot | null = null;
   private overlay: HTMLDivElement | null = null;
   private label: HTMLDivElement | null = null;
+  private activeForm: HTMLFormElement | null = null;
   private markers: Marker[] = [];
   async ids() {
     const result = (await chrome.runtime.sendMessage({ type: "SPOTPATCH_GET_IDS" })) as {
@@ -61,6 +62,7 @@ class Inspector {
   async start(project: Project) {
     this.project = project;
     this.mount();
+    this.closeForm();
     this.overlay!.style.display = "none";
     this.label!.style.display = "none";
     document.documentElement.style.cursor = "crosshair";
@@ -110,7 +112,25 @@ class Inspector {
   onKey = (event: KeyboardEvent) => {
     if (event.key === "Escape") this.stop();
   };
+  onOutsideFormClick = (event: MouseEvent) => {
+    if (!this.activeForm || event.composedPath().includes(this.activeForm)) return;
+    this.closeForm(this.activeForm);
+  };
+  onFormKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") this.closeForm(this.activeForm ?? undefined);
+  };
+  closeForm(expected?: HTMLFormElement) {
+    if (expected && this.activeForm !== expected) {
+      expected.remove();
+      return;
+    }
+    this.shadow?.querySelectorAll(".card").forEach((card) => card.remove());
+    this.activeForm = null;
+    removeEventListener("click", this.onOutsideFormClick, true);
+    removeEventListener("keydown", this.onFormKey, true);
+  }
   async openForm(element: Element) {
+    this.closeForm();
     const context = captureElement(element),
       box = element.getBoundingClientRect(),
       card = document.createElement("form");
@@ -119,28 +139,46 @@ class Inspector {
     card.style.top = `${Math.min(innerHeight - 420, Math.max(12, box.top))}px`;
     card.innerHTML = `<h2>Novo feedback</h2><p>${this.project?.name}</p><div class="preview">${context.tagName} · ${context.textContent.slice(0, 70) || context.cssSelector}</div><label class="field">Comentário<textarea name="comment" minlength="5" maxlength="2000" required placeholder="Explique o que precisa mudar"></textarea></label><div class="row"><label class="field">Categoria<select name="category"><option value="visual_bug">Bug visual</option><option value="functional_bug">Bug funcional</option><option value="content_change">Mudança de conteúdo</option><option value="ux_improvement">Melhoria de UX</option><option value="performance">Performance</option><option value="accessibility">Acessibilidade</option><option value="other">Outro</option></select></label><label class="field">Prioridade<select name="priority"><option value="low">Baixa</option><option value="medium" selected>Média</option><option value="high">Alta</option><option value="critical">Crítica</option></select></label></div><div class="row"><label class="field">Nome opcional<input name="name" maxlength="100"/></label><label class="field">Email opcional<input name="email" type="email" maxlength="320"/></label></div><div class="actions"><button type="button" class="cancel">Cancelar</button><button type="submit">Enviar feedback</button></div>`;
     this.shadow!.append(card);
+    this.activeForm = card;
     card.querySelector<HTMLTextAreaElement>("textarea")?.focus();
-    card.querySelector(".cancel")?.addEventListener("click", () => card.remove());
+    card.querySelector(".cancel")?.addEventListener("click", () => this.closeForm(card));
     card.addEventListener("submit", (event) => {
       event.preventDefault();
-      void this.submit(card, context);
+      void this.submit(card, element);
+    });
+    queueMicrotask(() => {
+      if (this.activeForm !== card) return;
+      addEventListener("click", this.onOutsideFormClick, true);
+      addEventListener("keydown", this.onFormKey, true);
     });
   }
-  async submit(form: HTMLFormElement, element: ReturnType<typeof captureElement>) {
+  async submit(form: HTMLFormElement, selectedElement: Element) {
     const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
     submit.disabled = true;
     submit.textContent = "Enviando…";
     form.querySelector(".error")?.remove();
     try {
-      const ids = await this.ids(),
-        page = capturePage(ids.installationId, ids.sessionId),
+      const data = new FormData(form),
+        ids = await this.ids(),
+        root = this.root,
+        previousVisibility = root?.style.visibility ?? "";
+      let element: ReturnType<typeof captureElement>;
+      let page: ReturnType<typeof capturePage>;
+      let capture: { success: boolean; viewport?: string; element?: string };
+      if (root) root.style.visibility = "hidden";
+      try {
+        await waitForVisualUpdate();
+        element = captureElement(selectedElement);
+        page = capturePage(ids.installationId, ids.sessionId);
         capture = (await chrome.runtime.sendMessage({
           type: "SPOTPATCH_CAPTURE",
           boundingBox: element.boundingBox,
           devicePixelRatio: page.viewport.devicePixelRatio,
         })) as { success: boolean; viewport?: string; element?: string };
-      const data = new FormData(form),
-        payload: FeedbackCreateInput = {
+      } finally {
+        if (root) root.style.visibility = previousVisibility;
+      }
+      const payload: FeedbackCreateInput = {
           idempotencyKey: crypto.randomUUID(),
           projectId: this.project!.projectId,
           comment: String(data.get("comment")),
@@ -160,7 +198,7 @@ class Inspector {
         }),
         json = (await response.json()) as { success: boolean; error?: { message: string } };
       if (!response.ok || !json.success) throw new Error(json.error?.message || "Falha no envio");
-      form.remove();
+      this.closeForm(form);
       await this.loadMarkers(this.project!);
     } catch (error) {
       form.insertAdjacentHTML(
@@ -210,4 +248,9 @@ function escapeHtml(value: string) {
   const div = document.createElement("div");
   div.textContent = value;
   return div.innerHTML;
+}
+function waitForVisualUpdate() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
 }
