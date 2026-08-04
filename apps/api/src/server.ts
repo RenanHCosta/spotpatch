@@ -23,6 +23,13 @@ import {
 } from "@spotpatch/workflow";
 import { getOrchestrator } from "./orchestrator";
 import { getStore, type FeedbackRecord } from "./store";
+import {
+  agentToolDefinitions,
+  agentToolNames,
+  allowedRunTypes,
+  parseAgentToolArguments,
+  type AgentToolName,
+} from "./agent-tools";
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -305,28 +312,18 @@ async function handleAdmin(request: NextRequest, parts: string[]) {
   return json(fail("NOT_FOUND", "Endpoint administrativo não encontrado."), 404);
 }
 
-const toolNames = [
-  "GET_FEEDBACK_CONTEXT",
-  "GET_PROJECT_CONTEXT",
-  "GET_SIGNED_SCREENSHOT_URL",
-  "SAVE_INVESTIGATION",
-  "ADD_FEEDBACK_EVENT",
-  "MARK_FEEDBACK_NEEDS_INFORMATION",
-  "GET_APPROVED_INVESTIGATION",
-  "SAVE_EXECUTION_PROGRESS",
-  "SAVE_EXECUTION_RESULT",
-  "MARK_EXECUTION_FAILED",
-] as const;
-async function callAgentTool(name: string, args: Record<string, unknown>) {
+async function callAgentTool(name: AgentToolName, rawArgs: Record<string, unknown>) {
+  const args = parseAgentToolArguments(name, rawArgs);
   const store = getStore(),
-    feedbackId = z.string().uuid().parse(args.feedbackId),
+    feedbackId = args.feedbackId,
     feedback = await store.getFeedback(feedbackId);
   if (!feedback) throw new Error("Feedback not found");
-  const runId = args.runId ? z.string().uuid().parse(args.runId) : null;
-  const run = runId ? feedback.runs.find((candidate) => candidate.id === runId) : null;
-  if (runId && !run) throw new Error("Run does not belong to feedback");
-  if (run?.agent_id && args.agentId !== run.agent_id)
-    throw new Error("Agent is not authorized for this run");
+  const runId = args.runId,
+    run = feedback.runs.find((candidate) => candidate.id === runId);
+  if (!run) throw new Error("Run does not belong to feedback");
+  if (run.agent_id !== args.agentId) throw new Error("Agent is not authorized for this run");
+  if (!allowedRunTypes[name].includes(run.run_type as "investigation" | "execution"))
+    throw new Error("Tool is not authorized for this run type");
   if (name === "GET_FEEDBACK_CONTEXT")
     return {
       feedback: {
@@ -390,7 +387,8 @@ async function callAgentTool(name: string, args: Record<string, unknown>) {
     return saved;
   }
   if (name === "MARK_FEEDBACK_NEEDS_INFORMATION") {
-    if (feedback.status !== "investigating") throw new Error("Investigation is not active");
+    if (feedback.status !== "investigating" || run.status !== "in_progress")
+      throw new Error("Investigation is not active");
     await store.addEvent(
       feedbackId,
       "investigator_agent",
@@ -398,12 +396,18 @@ async function callAgentTool(name: string, args: Record<string, unknown>) {
       "information_requested",
       { questions: args.questions },
     );
-    return store.transition(
+    const transitioned = await store.transition(
       feedbackId,
       "needs_information",
       "investigator_agent",
       "information_requested",
     );
+    await store.updateRun(runId, {
+      status: "completed",
+      result_payload: { questions: args.questions },
+      finished_at: new Date().toISOString(),
+    });
+    return transitioned;
   }
   if (name === "GET_APPROVED_INVESTIGATION") {
     if (
@@ -451,7 +455,10 @@ async function callAgentTool(name: string, args: Record<string, unknown>) {
     });
     return store.transition(feedbackId, "failed", "executor_agent", "execution_failed");
   }
-  if (name === "ADD_FEEDBACK_EVENT")
+  if (name === "ADD_FEEDBACK_EVENT") {
+    const expectedActor =
+      run.run_type === "investigation" ? "investigator_agent" : "executor_agent";
+    if (args.actorType !== expectedActor) throw new Error("Actor does not match the active run");
     return store.addEvent(
       feedbackId,
       z.enum(["investigator_agent", "executor_agent"]).parse(args.actorType),
@@ -459,6 +466,7 @@ async function callAgentTool(name: string, args: Record<string, unknown>) {
       z.string().max(100).parse(args.eventType),
       args.payload,
     );
+  }
   throw new Error("Unknown agent tool");
 }
 async function handleAgents(request: NextRequest, parts: string[]) {
@@ -466,44 +474,79 @@ async function handleAgents(request: NextRequest, parts: string[]) {
   await requireAgent(request, raw);
   if (parts[0] !== "mcp")
     return json(fail("NOT_FOUND", "Endpoint de agent tools não encontrado."), 404);
+  if (request.method === "GET")
+    return new NextResponse(null, { status: 405, headers: { ...cors, Allow: "POST" } });
   const rpc = z
     .object({
       jsonrpc: z.literal("2.0"),
-      id: z.union([z.string(), z.number()]),
+      id: z.union([z.string(), z.number()]).optional(),
       method: z.string(),
       params: z.record(z.unknown()).optional(),
     })
     .parse(JSON.parse(raw));
+  if (rpc.method === "notifications/initialized") return new NextResponse(null, { status: 202 });
+  if (rpc.id === undefined)
+    return json({
+      jsonrpc: "2.0",
+      id: null,
+      error: { code: -32600, message: "Request id is required" },
+    });
+  if (rpc.method === "initialize") {
+    const requested = z
+      .object({ protocolVersion: z.string().min(1) })
+      .passthrough()
+      .parse(rpc.params);
+    return json({
+      jsonrpc: "2.0",
+      id: rpc.id,
+      result: {
+        protocolVersion: requested.protocolVersion,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: "spotpatch-agent-tools", version: "1.0.0" },
+        instructions:
+          "Use only the tools selected for the current SpotPatch agent and always pass the run context from the initiating message.",
+      },
+    });
+  }
+  if (rpc.method === "ping") return json({ jsonrpc: "2.0", id: rpc.id, result: {} });
   if (rpc.method === "tools/list")
     return json({
       jsonrpc: "2.0",
       id: rpc.id,
       result: {
-        tools: toolNames.map((name) => ({
-          name,
-          description: `SpotPatch restricted tool: ${name}`,
-          inputSchema: { type: "object", additionalProperties: true },
-        })),
+        tools: agentToolDefinitions,
       },
     });
   if (rpc.method === "tools/call") {
     const params = z
-      .object({ name: z.enum(toolNames), arguments: z.record(z.unknown()) })
+      .object({
+        name: z.enum(agentToolNames as [AgentToolName, ...AgentToolName[]]),
+        arguments: z.record(z.unknown()),
+      })
       .parse(rpc.params);
-    const result = await callAgentTool(params.name, params.arguments);
-    return json({
-      jsonrpc: "2.0",
-      id: rpc.id,
-      result: {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-        structuredContent: result,
-      },
-    });
+    try {
+      const result = await callAgentTool(params.name, params.arguments);
+      return json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result: {
+          content: [{ type: "text", text: JSON.stringify(result) }],
+          structuredContent: result,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Tool execution failed";
+      return json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result: {
+          isError: true,
+          content: [{ type: "text", text: message.slice(0, 500) }],
+        },
+      });
+    }
   }
-  return json(
-    { jsonrpc: "2.0", id: rpc.id, error: { code: -32601, message: "Method not found" } },
-    404,
-  );
+  return json({ jsonrpc: "2.0", id: rpc.id, error: { code: -32601, message: "Method not found" } });
 }
 
 export async function handleApiRequest(
