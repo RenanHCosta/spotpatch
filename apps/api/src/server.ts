@@ -193,11 +193,19 @@ async function handleAdmin(request: NextRequest, parts: string[]) {
     request.method === "GET" &&
     parts[0] === "feedback" &&
     parts[1] &&
-    (!parts[2] || parts[2] === "events")
+    (!parts[2] || parts[2] === "events" || parts[2] === "screenshots")
   ) {
     const detail = await store.getFeedback(parts[1]);
     if (!detail) return json(fail("FEEDBACK_NOT_FOUND", "Feedback não encontrado."), 404);
-    return json(ok(parts[2] === "events" ? detail.events : detail));
+    if (parts[2] === "events") return json(ok(detail.events));
+    if (parts[2] === "screenshots") {
+      const [viewportUrl, elementUrl] = await Promise.all([
+        store.signedUrl(detail.screenshot_path),
+        store.signedUrl(detail.element_screenshot_path),
+      ]);
+      return json(ok({ viewportUrl, elementUrl, expiresIn: 300 }));
+    }
+    return json(ok(detail));
   }
   if (request.method === "POST" && parts[0] === "feedback" && parts[1]) {
     const id = parts[1],
