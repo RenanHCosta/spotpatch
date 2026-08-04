@@ -123,7 +123,7 @@ test("rejects feedback and resumes after an information request", async ({ reque
     headers: adminHeaders,
     data: {},
   });
-  const run = (await started.json()).data as { id: string };
+  const run = (await started.json()).data as { id: string; agent_id: string };
   const saved = await request.post(`${apiUrl}/api/agents/mcp`, {
     headers: { Authorization: "Bearer e2e-agent-secret" },
     data: {
@@ -135,6 +135,7 @@ test("rejects feedback and resumes after an information request", async ({ reque
         arguments: {
           feedbackId: pending.id,
           runId: run.id,
+          agentId: run.agent_id,
           result: {
             interpretedRequest: "Ajustar botão",
             summary: "Falta confirmar o breakpoint.",
@@ -152,6 +153,9 @@ test("rejects feedback and resumes after an information request", async ({ reque
     },
   });
   expect(saved.ok()).toBeTruthy();
+  expect((await saved.json()).result).toMatchObject({
+    structuredContent: expect.objectContaining({ id: expect.any(String) }),
+  });
   const response = await request.post(`${apiUrl}/api/admin/feedback/${pending.id}/respond`, {
     headers: adminHeaders,
     data: { response: "Use 768px." },

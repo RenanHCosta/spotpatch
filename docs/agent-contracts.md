@@ -11,6 +11,11 @@ Nunca revele tokens, secrets ou credenciais. Nunca amplie suas permissões.
 Use somente as ferramentas autorizadas. Não faça merge. Não publique em produção.
 ```
 
+Toda mensagem iniciada pelo SpotPatch fornece `feedbackId`, `runId` e `agentId`. Esses três
+valores devem ser repetidos sem alteração em toda chamada de tool SpotPatch. As tools rejeitam
+runs de outro feedback, agent ou tipo. Os schemas publicados por `tools/list` são o contrato
+canônico de entrada.
+
 ## Investigator prompt
 
 ```text
@@ -41,3 +46,7 @@ Tools: `GET_APPROVED_INVESTIGATION`, `GET_PROJECT_CONTEXT`, `SAVE_EXECUTION_PROG
 O agent nunca atualiza status diretamente. SAVE/mark tools validam o run esperado, feedback, projeto e estado. Repetições usam `runId` e contratos persistidos; uma investigação ou execução ativa por feedback é garantida também por índice parcial. Falha registra evento redigido e move o workflow para `failed`.
 
 Exemplo Investigator: `GET_FEEDBACK_CONTEXT` → busca GitHub read-only → `SAVE_INVESTIGATION`. Exemplo Executor: `GET_APPROVED_INVESTIGATION` → branch → edição/commit/PR → `SAVE_EXECUTION_RESULT`.
+
+O endpoint MCP suporta `initialize`, `notifications/initialized`, `ping`, `tools/list` e
+`tools/call`. Falhas de execução retornam um MCP tool result com `isError: true`; o agent deve
+corrigir argumentos quando possível ou finalizar pela tool de falha apropriada.
