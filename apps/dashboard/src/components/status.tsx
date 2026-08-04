@@ -1,4 +1,5 @@
 import { Badge, cn } from "@spotpatch/ui";
+
 const labels: Record<string, string> = {
   new: "Novo",
   queued_for_investigation: "Na fila",
@@ -12,6 +13,7 @@ const labels: Record<string, string> = {
   failed: "Falhou",
   rejected: "Rejeitado",
 };
+
 export function Status({ value }: { value: string }) {
   return (
     <Badge
