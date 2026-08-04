@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ExternalLink, MessageSquarePlus, Radio, Target } from "lucide-react";
 import "./style.css";
 const API = import.meta.env.WXT_PUBLIC_SPOTPATCH_API_URL || "http://localhost:3001";
+const DASHBOARD = import.meta.env.WXT_PUBLIC_SPOTPATCH_DASHBOARD_URL || "http://localhost:3000";
 type Resolution = { projectId: string; name: string; enabled: boolean };
 function App() {
   const [hostname, setHostname] = useState(""),
@@ -104,7 +105,7 @@ function App() {
           Ver feedbacks desta página
         </button>
         {actionError && <div className="warning action-error">{actionError}</div>}
-        <a href="http://localhost:3000/backlog" target="_blank">
+        <a href={`${DASHBOARD.replace(/\/+$/, "")}/backlog`} target="_blank">
           Abrir dashboard <ExternalLink size={14} />
         </a>
       </section>

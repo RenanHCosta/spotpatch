@@ -6,12 +6,17 @@ import type {
 } from "@spotpatch/shared";
 import { defineContentScript } from "wxt/utils/define-content-script";
 const API = import.meta.env.WXT_PUBLIC_SPOTPATCH_API_URL || "http://localhost:3001";
+const DASHBOARD = (
+  import.meta.env.WXT_PUBLIC_SPOTPATCH_DASHBOARD_URL || "http://localhost:3000"
+).replace(/\/+$/, "");
 type Project = { projectId: string; name: string };
 type Marker = {
   id: string;
   number: number;
   comment: string;
+  category: string;
   status: string;
+  date: string;
   selector: string;
   boundingBox: { left: number; top: number; width: number; height: number };
 };
@@ -49,6 +54,7 @@ class Inspector {
   private countdown: HTMLDivElement | null = null;
   private activeForm: HTMLFormElement | null = null;
   private activeElement: Element | null = null;
+  private activeMarkerCard: HTMLElement | null = null;
   private captureController: AbortController | null = null;
   private isCapturing = false;
   private captureDrafts = new WeakMap<HTMLFormElement, CaptureDraft>();
@@ -72,6 +78,9 @@ class Inspector {
       "all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none";
     this.shadow = this.root.attachShadow({ mode: "open" });
     this.shadow.innerHTML = `<style>*{box-sizing:border-box;font-family:Inter,system-ui,sans-serif}.outline{position:fixed;border:2px solid #ec5b35;background:#ec5b3520;pointer-events:none}.label{position:fixed;max-width:280px;border-radius:6px;background:#101828;padding:6px 8px;color:white;font:700 11px system-ui;box-shadow:0 3px 10px #0003}.marker{position:fixed;display:grid;width:28px;height:28px;place-items:center;border:3px solid white;border-radius:50%;background:#ec5b35;color:white;font:800 11px system-ui;box-shadow:0 3px 12px #0005;pointer-events:auto;cursor:pointer}.marker.orphan{background:#667085}.card{position:fixed;width:340px;max-height:calc(100vh - 24px);overflow:auto;border:1px solid #d0d5dd;border-radius:14px;background:white;padding:16px;color:#101828;box-shadow:0 16px 50px #10182835;pointer-events:auto}.card h2{margin:0 0 4px;font-size:16px}.card p{margin:0 0 12px;color:#667085;font-size:12px}.preview{overflow:hidden;margin-bottom:12px;border-radius:8px;background:#f2f4f7;padding:9px;white-space:nowrap;text-overflow:ellipsis;font:600 11px monospace}.card textarea,.card input,.card select{width:100%;margin-top:5px;border:1px solid #d0d5dd;border-radius:7px;padding:8px;font-size:12px}.card textarea{min-height:90px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:block;margin-top:9px;color:#475467;font-size:10px;font-weight:800;text-transform:uppercase}.capture-preview{margin-top:14px;border-top:1px solid #e4e7ec;padding-top:12px}.capture-preview>strong{display:block;margin-bottom:8px;font-size:11px;text-transform:uppercase;color:#475467}.capture-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.capture-item{overflow:hidden;border:1px solid #e4e7ec;border-radius:8px;background:#f8fafc}.capture-item span{display:block;padding:6px 8px;font-size:10px;font-weight:800;color:#475467}.capture-item img{display:block;width:100%;height:104px;object-fit:contain;background:#eef2f6}.capture-item .capture-empty{display:grid;height:104px;place-items:center;padding:8px;text-align:center;font-size:10px;color:#667085}.capture-warning{margin:9px 0 0!important;border-radius:7px;background:#fffaeb;padding:8px;color:#93370d!important}.capture-countdown{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;color:#fff;text-align:center;text-shadow:0 3px 18px #0008}.capture-countdown strong{font:900 clamp(88px,22vw,180px)/.85 Inter,system-ui,sans-serif}.capture-countdown span{margin-top:20px;border-radius:999px;background:#101828dd;padding:9px 14px;font:800 12px Inter,system-ui,sans-serif}.actions{display:flex;gap:8px;margin-top:14px}.actions button{height:36px;flex:1;border:0;border-radius:7px;background:#101828;color:white;font-weight:800;cursor:pointer}.actions button:disabled{cursor:wait;opacity:.6}.actions .cancel,.actions .recapture{border:1px solid #d0d5dd;background:white;color:#344054}.error{margin-top:10px!important;color:#b42318!important}[hidden]{display:none!important}</style>`;
+    const markerCardStyle = document.createElement("style");
+    markerCardStyle.textContent = `.marker-card{position:fixed;width:300px;max-height:calc(100vh - 24px);overflow:auto;border:1px solid #d0d5dd;border-radius:14px;background:#fff;padding:16px;color:#101828;box-shadow:0 16px 50px #10182835;pointer-events:auto}.marker-card header{display:flex;align-items:center;justify-content:space-between;gap:12px}.marker-card header strong{font-size:14px}.marker-card .marker-close{display:grid;width:28px;height:28px;place-items:center;border:0;border-radius:7px;background:#f2f4f7;color:#475467;cursor:pointer}.marker-card .marker-comment{margin:14px 0;font-size:14px;line-height:1.5}.marker-card dl{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0}.marker-card dt{font-size:9px;font-weight:800;text-transform:uppercase;color:#667085}.marker-card dd{margin:3px 0 0;font-size:11px;font-weight:700;color:#344054}.marker-card a{display:block;margin-top:14px;border-radius:8px;background:#101828;padding:10px 12px;color:#fff;text-align:center;text-decoration:none;font-size:12px;font-weight:800}`;
+    this.shadow.append(markerCardStyle);
     document.documentElement.append(this.root);
     this.overlay = document.createElement("div");
     this.overlay.className = "outline";
@@ -89,6 +98,7 @@ class Inspector {
   async start(project: Project) {
     this.project = project;
     this.mount();
+    this.closeMarkerCard();
     this.closeForm();
     this.overlay!.style.display = "none";
     this.label!.style.display = "none";
@@ -155,6 +165,32 @@ class Inspector {
     if (!this.activeForm || !this.activeElement?.isConnected) return;
     positionCommentForm(this.activeForm, this.activeElement);
   };
+  onOutsideMarkerClick = (event: MouseEvent) => {
+    if (!this.activeMarkerCard || event.composedPath().includes(this.activeMarkerCard)) return;
+    this.closeMarkerCard();
+  };
+  onMarkerKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") this.closeMarkerCard();
+  };
+  closeMarkerCard() {
+    this.activeMarkerCard?.remove();
+    this.activeMarkerCard = null;
+    removeEventListener("click", this.onOutsideMarkerClick, true);
+    removeEventListener("keydown", this.onMarkerKey, true);
+  }
+  openMarkerCard(marker: Marker, anchor: HTMLElement) {
+    this.closeMarkerCard();
+    const card = createMarkerCard(marker);
+    this.shadow!.append(card);
+    this.activeMarkerCard = card;
+    positionMarkerCard(card, anchor.getBoundingClientRect());
+    card.querySelector(".marker-close")?.addEventListener("click", () => this.closeMarkerCard());
+    queueMicrotask(() => {
+      if (this.activeMarkerCard !== card) return;
+      addEventListener("click", this.onOutsideMarkerClick, true);
+      addEventListener("keydown", this.onMarkerKey, true);
+    });
+  }
   setCaptureMode(mode: "idle" | "countdown" | "capturing") {
     this.shadow
       ?.querySelectorAll<HTMLElement>(".outline,.label,.marker,.card")
@@ -333,6 +369,7 @@ class Inspector {
   async loadMarkers(project: Project) {
     this.project = project;
     this.mount();
+    this.closeMarkerCard();
     const ids = await this.ids(),
       page = capturePage(ids.installationId, ids.sessionId),
       response = await fetch(
@@ -346,6 +383,7 @@ class Inspector {
   }
   renderMarkers = () => {
     if (!this.shadow) return;
+    this.closeMarkerCard();
     this.shadow.querySelectorAll(".marker").forEach((v) => v.remove());
     for (const marker of this.markers) {
       let target: Element | null = null;
@@ -356,14 +394,103 @@ class Inspector {
       }
       const box = target?.getBoundingClientRect(),
         node = document.createElement("button");
+      node.type = "button";
       node.className = `marker${target ? "" : " orphan"}`;
       node.textContent = String(marker.number);
       node.title = `${marker.comment}${target ? "" : " (elemento não reencontrado)"}`;
       node.style.left = `${Math.max(4, (box?.left ?? marker.boundingBox.left) + 8)}px`;
       node.style.top = `${Math.max(4, (box?.top ?? marker.boundingBox.top) + 8)}px`;
+      node.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.openMarkerCard(marker, node);
+      });
       this.shadow.append(node);
     }
   };
+}
+const markerCategoryLabels: Record<string, string> = {
+  visual_bug: "Bug visual",
+  functional_bug: "Bug funcional",
+  content_change: "Mudança de conteúdo",
+  ux_improvement: "Melhoria de UX",
+  performance: "Performance",
+  accessibility: "Acessibilidade",
+  other: "Outro",
+};
+const markerStatusLabels: Record<string, string> = {
+  open: "Aberto",
+  resolved: "Resolvido",
+  closed: "Fechado",
+};
+function createMarkerCard(marker: Marker) {
+  const card = document.createElement("article"),
+    header = document.createElement("header"),
+    title = document.createElement("strong"),
+    close = document.createElement("button"),
+    comment = document.createElement("p"),
+    metadata = document.createElement("dl"),
+    link = document.createElement("a");
+
+  card.className = "marker-card";
+  title.textContent = `Feedback #${marker.number}`;
+  close.type = "button";
+  close.className = "marker-close";
+  close.textContent = "×";
+  close.setAttribute("aria-label", "Fechar detalhes do feedback");
+  header.append(title, close);
+
+  comment.className = "marker-comment";
+  comment.textContent = marker.comment;
+  metadata.append(
+    createMarkerMetadata("Categoria", markerCategoryLabels[marker.category] ?? marker.category),
+    createMarkerMetadata("Status", markerStatusLabels[marker.status] ?? marker.status),
+    createMarkerMetadata("Criado em", formatMarkerDate(marker.date)),
+  );
+
+  link.href = `${DASHBOARD}/backlog/${encodeURIComponent(marker.id)}`;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = "Abrir no dashboard ↗";
+  card.append(header, comment, metadata, link);
+  return card;
+}
+function createMarkerMetadata(label: string, value: string) {
+  const wrapper = document.createElement("div"),
+    term = document.createElement("dt"),
+    description = document.createElement("dd");
+  term.textContent = label;
+  description.textContent = value;
+  wrapper.append(term, description);
+  return wrapper;
+}
+function formatMarkerDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Data indisponível"
+    : new Intl.DateTimeFormat("pt-BR", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
+}
+function positionMarkerCard(card: HTMLElement, anchor: DOMRect) {
+  const margin = 12,
+    viewportWidth = Math.max(0, visualViewport?.width ?? innerWidth),
+    viewportHeight = Math.max(0, visualViewport?.height ?? innerHeight),
+    width = Math.max(0, Math.min(300, viewportWidth - margin * 2)),
+    maximumLeft = Math.max(margin, viewportWidth - width - margin);
+  card.style.width = `${width}px`;
+  const cardHeight = Math.min(card.scrollHeight, Math.max(0, viewportHeight - margin * 2)),
+    maximumTop = Math.max(margin, viewportHeight - cardHeight - margin),
+    top = Math.min(maximumTop, Math.max(margin, anchor.top)),
+    left =
+      viewportWidth - anchor.right - margin >= width
+        ? anchor.right + margin
+        : anchor.left - margin >= width
+          ? anchor.left - width - margin
+          : Math.min(maximumLeft, Math.max(margin, anchor.left));
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+  card.style.maxHeight = `${Math.max(0, viewportHeight - top - margin)}px`;
 }
 function positionCommentForm(form: HTMLFormElement, element: Element, currentBox?: DOMRect) {
   const margin = 12,
