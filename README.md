@@ -2,7 +2,7 @@
 
 > Clique em qualquer parte do seu site, explique o que precisa mudar e receba um Pull Request pronto para revisão.
 
-SpotPatch é um MVP gerenciado que transforma feedback visual em investigação técnica e, após aprovação, execução por agentes do Deco Studio. Não é um SaaS aberto: não há cadastro, login, Supabase Auth, organizações internas ou conexão de GitHub pelo visitante.
+SpotPatch é um MVP gerenciado que transforma feedback visual em investigação técnica e execução automática por agentes do Deco Studio. Não é um SaaS aberto: não há cadastro, login, Supabase Auth, organizações internas ou conexão de GitHub pelo visitante.
 
 ## Arquitetura
 
@@ -13,7 +13,7 @@ Dashboard ─────────┼──> API SpotPatch ──> Supabase P
                    └── nunca acessa Supabase, Deco ou GitHub diretamente
 ```
 
-SpotPatch controla projetos, captura, backlog, estados, aprovação, timeline e persistência. Deco Studio controla agentes, threads, raciocínio, tools, acesso ao repositório, branch, commits e Pull Request. O Supabase é o registro principal; a thread Deco é auditoria complementar.
+SpotPatch controla projetos, captura, backlog, estados, timeline e persistência. Deco Studio controla agentes, threads, raciocínio, tools, acesso ao repositório, branch, commits e Pull Request. O Supabase é o registro principal; a thread Deco é auditoria complementar.
 
 ## Estrutura
 

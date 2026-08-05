@@ -58,8 +58,15 @@ export class DemoAgentOrchestrator implements AgentOrchestrator {
     if (!feedback.investigation?.canExecute) throw new Error("Investigation cannot be executed");
     if (["high", "critical"].includes(feedback.investigation.riskLevel))
       throw new Error("High-risk investigation requires manual handling");
-    assertTransition(feedback.status, "queued_for_execution");
-    await store.transition(feedbackId, "queued_for_execution", "operator", "execution_approved");
+    if (feedback.status !== "queued_for_execution") {
+      assertTransition(feedback.status, "queued_for_execution");
+      await store.transition(
+        feedbackId,
+        "queued_for_execution",
+        "system",
+        "execution_queued_automatically",
+      );
+    }
     const queued = await store.createRun(feedback, "execution", "demo", idempotencyKey);
     await store.transition(feedbackId, "executing", "system", "execution_started");
     return store.updateRun(queued.id, {
@@ -105,21 +112,27 @@ export class DemoAgentOrchestrator implements AgentOrchestrator {
       });
       const safe = validateInvestigationPolicy(result);
       await store.saveInvestigation(feedbackId, run.id, safe);
-      await store.transition(
-        feedbackId,
-        investigationTarget(safe),
-        "investigator_agent",
-        "investigation_saved",
-        { mode: "demo" },
-      );
-      return store.updateRun(run.id, {
+      const target = investigationTarget(safe);
+      const completed = await store.updateRun(run.id, {
         status: "completed",
         result_payload: safe,
         finished_at: new Date().toISOString(),
       });
+      if (target === "needs_information") {
+        await store.transition(
+          feedbackId,
+          target,
+          "investigator_agent",
+          "investigation_saved",
+          { mode: "demo" },
+        );
+      } else {
+        await this.startExecution({ feedbackId, idempotencyKey: `auto:${run.id}` });
+      }
+      return completed;
     }
     const investigation = feedback.investigation;
-    if (!investigation) throw new Error("Approved investigation not found");
+    if (!investigation) throw new Error("Executable investigation not found");
     const result = executionResultSchema.parse({
       summary: "CTA atualizado com largura total no mobile e largura automática no desktop.",
       branchName: `spotpatch/feedback-${feedback.public_number}-mobile-cta`,
@@ -181,6 +194,7 @@ export class DecoStudioAgentOrchestrator implements AgentOrchestrator {
       "investigation_queued",
     );
     const run = await store.createRun(feedback, "investigation", "deco_studio", idempotencyKey);
+    await store.transition(feedbackId, "investigating", "system", "investigation_started");
     await store.updateRun(run.id, { agent_id: agentId });
     const client = decoClientFromEnv(),
       thread = await client.createThread({
@@ -198,7 +212,6 @@ export class DecoStudioAgentOrchestrator implements AgentOrchestrator {
         agentId,
       }),
     });
-    await store.transition(feedbackId, "investigating", "system", "investigation_started");
     return store.updateRun(run.id, {
       status: "in_progress",
       thread_id: thread.id,
@@ -218,10 +231,18 @@ export class DecoStudioAgentOrchestrator implements AgentOrchestrator {
       investigation = feedback.investigation,
       agentId = feedback.project.execution_agent_id || process.env.DECO_STUDIO_EXECUTION_AGENT_ID;
     if (!investigation?.canExecute || !agentId) throw new Error("Execution is not available");
-    assertTransition(feedback.status, "queued_for_execution");
-    await store.transition(feedbackId, "queued_for_execution", "operator", "execution_approved");
+    if (feedback.status !== "queued_for_execution") {
+      assertTransition(feedback.status, "queued_for_execution");
+      await store.transition(
+        feedbackId,
+        "queued_for_execution",
+        "system",
+        "execution_queued_automatically",
+      );
+    }
     const run = await store.createRun(feedback, "execution", "deco_studio", idempotencyKey);
     await store.updateRun(run.id, { agent_id: agentId });
+    await store.transition(feedbackId, "executing", "system", "execution_started");
     const client = decoClientFromEnv(),
       thread = await client.createThread({ title: `SpotPatch execution ${feedback.id}`, agentId });
     const started = await client.runAgent({
@@ -235,7 +256,6 @@ export class DecoStudioAgentOrchestrator implements AgentOrchestrator {
         agentId,
       }),
     });
-    await store.transition(feedbackId, "executing", "system", "execution_started");
     return store.updateRun(run.id, {
       status: "in_progress",
       thread_id: thread.id,

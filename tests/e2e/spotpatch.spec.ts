@@ -82,14 +82,15 @@ test("creates feedback, lists markers and completes demo workflow", async ({ req
   let detail = await request.get(`${apiUrl}/api/admin/feedback/${feedback.id}`, {
     headers: adminHeaders,
   });
-  expect((await detail.json()).data.status).toBe("awaiting_approval");
-  const approve = await request.post(`${apiUrl}/api/admin/feedback/${feedback.id}/approve`, {
-    headers: adminHeaders,
-    data: {},
-  });
-  const executionRun = (await approve.json()).data as { id: string };
+  const investigatingDetail = (await detail.json()).data as {
+    status: string;
+    runs: Array<{ id: string; run_type: string }>;
+  };
+  expect(investigatingDetail.status).toBe("executing");
+  const executionRun = investigatingDetail.runs.find((item) => item.run_type === "execution");
+  expect(executionRun).toBeTruthy();
   await new Promise((resolve) => setTimeout(resolve, 800));
-  await request.post(`${apiUrl}/api/admin/runs/${executionRun.id}/sync`, {
+  await request.post(`${apiUrl}/api/admin/runs/${executionRun!.id}/sync`, {
     headers: adminHeaders,
     data: { feedbackId: feedback.id },
   });

@@ -5,7 +5,7 @@ import { cn } from "@spotpatch/ui";
 export const metricItems = [
   ["new", "Novos"],
   ["investigating", "Investigando"],
-  ["awaiting_approval", "Aguardando aprovação"],
+  ["queued_for_execution", "Execução na fila"],
   ["executing", "Executando"],
   ["pull_request_opened", "PR aberto"],
   ["completed", "Concluídos"],

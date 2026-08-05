@@ -17,7 +17,6 @@ export const feedbackStatuses = [
   "queued_for_investigation",
   "investigating",
   "needs_information",
-  "awaiting_approval",
   "queued_for_execution",
   "executing",
   "pull_request_opened",
@@ -187,7 +186,7 @@ export type Project = {
   repository_owner: string;
   repository_name: string;
   default_branch: string;
-  agent_mode: "investigation_only" | "approval_required" | "autonomous_pr";
+  agent_mode: "investigation_only" | "autonomous_pr";
   deco_studio_org_slug: string | null;
   investigation_agent_id: string | null;
   execution_agent_id: string | null;

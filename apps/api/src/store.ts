@@ -123,6 +123,8 @@ function countBy<T>(items: T[], key: (item: T) => string) {
 }
 
 const now = () => new Date().toISOString();
+const normalizeFeedbackStatus = (value: unknown): FeedbackStatus =>
+  value === "awaiting_approval" ? "queued_for_execution" : (value as FeedbackStatus);
 const DEMO_PROJECT: Project = {
   id: "11111111-1111-4111-8111-111111111111",
   name: "Loja Demo SpotPatch",
@@ -133,7 +135,7 @@ const DEMO_PROJECT: Project = {
   repository_owner: "spotpatch-demo",
   repository_name: "storefront",
   default_branch: "main",
-  agent_mode: "approval_required",
+  agent_mode: "autonomous_pr",
   deco_studio_org_slug: null,
   investigation_agent_id: null,
   execution_agent_id: null,
@@ -348,15 +350,21 @@ class MemoryStore implements SpotPatchStore {
     eventType: string,
     payload: unknown = {},
   ): Promise<EventRecord> {
+    const movement = payload as {
+      previousStatus?: unknown;
+      newStatus?: unknown;
+      payload?: unknown;
+    };
     const event = {
       id: crypto.randomUUID(),
       feedback_item_id: feedbackId,
       actor_type: actorType,
       actor_label: label,
       event_type: eventType,
-      previous_status: null,
-      new_status: null,
-      payload,
+      previous_status:
+        typeof movement?.previousStatus === "string" ? movement.previousStatus : null,
+      new_status: typeof movement?.newStatus === "string" ? movement.newStatus : null,
+      payload: movement && "payload" in movement ? movement.payload : payload,
       created_at: now(),
     };
     this.events.push(event);
@@ -368,7 +376,7 @@ class MemoryStore implements SpotPatchStore {
       [
         "new",
         "investigating",
-        "awaiting_approval",
+        "queued_for_execution",
         "executing",
         "pull_request_opened",
         "completed",
@@ -519,6 +527,7 @@ class SupabaseStore extends MemoryStore {
     const element = this.mapElement(data as Record<string, unknown>);
     return {
       ...row,
+      status: normalizeFeedbackStatus(row.status),
       element,
       code_search_hints: generateCodeSearchHints(element, String(row.page_url)),
     } as unknown as FeedbackRecord;
@@ -578,6 +587,7 @@ class SupabaseStore extends MemoryStore {
     const execution = executionRow ? this.mapExecution(executionRow) : null;
     return {
       ...f,
+      status: normalizeFeedbackStatus(f.status),
       element: el,
       code_search_hints: generateCodeSearchHints(el, String(f.page_url)),
       project,
@@ -767,6 +777,11 @@ class SupabaseStore extends MemoryStore {
     eventType: string,
     payload: unknown = {},
   ) {
+    const movement = payload as {
+      previousStatus?: unknown;
+      newStatus?: unknown;
+      payload?: unknown;
+    };
     const { data, error } = await getSupabase()
       .from("feedback_events")
       .insert({
@@ -774,7 +789,10 @@ class SupabaseStore extends MemoryStore {
         actor_type: actorType,
         actor_label: label,
         event_type: eventType,
-        payload,
+        previous_status:
+          typeof movement?.previousStatus === "string" ? movement.previousStatus : null,
+        new_status: typeof movement?.newStatus === "string" ? movement.newStatus : null,
+        payload: movement && "payload" in movement ? movement.payload : payload,
       })
       .select()
       .single();
@@ -787,7 +805,7 @@ class SupabaseStore extends MemoryStore {
       [
         "new",
         "investigating",
-        "awaiting_approval",
+        "queued_for_execution",
         "executing",
         "pull_request_opened",
         "completed",

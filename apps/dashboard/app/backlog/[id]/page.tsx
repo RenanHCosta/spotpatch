@@ -92,7 +92,6 @@ export default function Feedback() {
           <Status value={data.status} />
           <div className="hidden gap-2 sm:flex">
             {canInvestigate && <button type="button" disabled={action.isPending} onClick={() => action.mutate("investigate")} className="h-8 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover">Investigar</button>}
-            {data.status === "awaiting_approval" && <button type="button" disabled={!data.investigation?.canExecute || action.isPending} onClick={() => action.mutate("approve")} className="h-8 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover">Aprovar</button>}
             {!["completed", "rejected", "pull_request_opened"].includes(data.status) && <button type="button" onClick={() => action.mutate("reject")} className="h-8 rounded-[4px] border border-line px-3 hover:bg-canvas">Rejeitar</button>}
           </div>
         </header>

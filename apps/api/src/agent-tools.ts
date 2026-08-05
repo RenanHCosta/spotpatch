@@ -20,7 +20,7 @@ const toolArgumentSchemas = {
   MARK_FEEDBACK_NEEDS_INFORMATION: runContextSchema.extend({
     questions: z.array(z.string().trim().min(1).max(1000)).min(1).max(10),
   }),
-  GET_APPROVED_INVESTIGATION: runContextSchema,
+  GET_EXECUTABLE_INVESTIGATION: runContextSchema,
   SAVE_EXECUTION_PROGRESS: runContextSchema.extend({
     message: z.string().trim().min(1).max(2000),
   }),
@@ -209,7 +209,7 @@ export const agentToolDefinitions = [
   {
     name: "SAVE_INVESTIGATION",
     description:
-      "Validate and persist the final structured investigation, then move the feedback to human input or approval.",
+      "Validate and persist the final structured investigation, then move the feedback to human input or automatic execution.",
     inputSchema: schema({ result: investigationResultJsonSchema }, ["result"]),
     annotations: annotations(false),
   },
@@ -248,8 +248,8 @@ export const agentToolDefinitions = [
     annotations: annotations(false),
   },
   {
-    name: "GET_APPROVED_INVESTIGATION",
-    description: "Read the approved executable investigation for the active execution run.",
+    name: "GET_EXECUTABLE_INVESTIGATION",
+    description: "Read the executable investigation for the active execution run.",
     inputSchema: schema(),
     annotations: annotations(true),
   },
@@ -297,7 +297,7 @@ export const allowedRunTypes: Record<AgentToolName, Array<"investigation" | "exe
   SAVE_INVESTIGATION: ["investigation"],
   ADD_FEEDBACK_EVENT: ["investigation", "execution"],
   MARK_FEEDBACK_NEEDS_INFORMATION: ["investigation"],
-  GET_APPROVED_INVESTIGATION: ["execution"],
+  GET_EXECUTABLE_INVESTIGATION: ["execution"],
   SAVE_EXECUTION_PROGRESS: ["execution"],
   SAVE_EXECUTION_RESULT: ["execution"],
   MARK_EXECUTION_FAILED: ["execution"],
@@ -320,5 +320,5 @@ export function executionAgentMessage(input: {
   runId: string;
   agentId: string;
 }) {
-  return `Execute approved investigation ${input.investigationId} for feedback ${input.feedbackId}. For every SpotPatch tool call, pass feedbackId=${input.feedbackId}, runId=${input.runId}, and agentId=${input.agentId}. Work only on a new branch, open a pull request, and finish exactly once with SAVE_EXECUTION_RESULT or MARK_EXECUTION_FAILED. Never merge or deploy.\n\n${untrusted}`;
+  return `Execute investigation ${input.investigationId} for feedback ${input.feedbackId}. For every SpotPatch tool call, pass feedbackId=${input.feedbackId}, runId=${input.runId}, and agentId=${input.agentId}. Work only on a new branch, open a pull request, and finish exactly once with SAVE_EXECUTION_RESULT or MARK_EXECUTION_FAILED. Never merge or deploy.\n\n${untrusted}`;
 }
