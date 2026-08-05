@@ -66,18 +66,17 @@ const columns = [
   {
     id: "intake",
     title: "Recebido",
-    statuses: [
-      "new",
-      "queued_for_investigation",
-      "needs_information",
-      "failed",
-      "rejected",
-    ],
+    statuses: ["new", "queued_for_investigation"],
   },
   { id: "investigation", title: "Investigação", statuses: ["investigating"] },
   { id: "execution", title: "Execução", statuses: ["queued_for_execution", "executing"] },
   { id: "pr", title: "Pull request", statuses: ["pull_request_opened"] },
   { id: "completed", title: "Concluído", statuses: ["completed"] },
+  {
+    id: "blocked",
+    title: "Bloqueados",
+    statuses: ["needs_information", "failed", "rejected"],
+  },
 ] as const;
 
 const priorityLabels: Record<string, string> = {
