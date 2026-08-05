@@ -15,6 +15,12 @@ Copie o Virtual MCP ID da URL do agente ou de `COLLECTION_CONNECTIONS_LIST` para
 
 Crie outro Agent com tools SpotPatch de execução e uma GitHub Connection restrita a ler, criar branch, criar/atualizar arquivo, commit e abrir PR. Não conceda merge, deploy, delete, secrets, permissões ou branch protection. Copie o ID para `DECO_STUDIO_EXECUTION_AGENT_ID`.
 
+## Produção
+
+Crie um terceiro Agent com somente `GET_PRODUCTION_CONTEXT`, `GET_PROJECT_CONTEXT`, `SAVE_PRODUCTION_RESULT`, `ADD_FEEDBACK_EVENT` e `MARK_PRODUCTION_FAILED`. Anexe uma Connection separada com as tools mínimas para consultar/mergear o PR indicado e iniciar/verificar o deploy. Não conceda edição de arquivos, secrets, delete, permissões ou branch protection. Copie o ID para `DECO_STUDIO_PRODUCTION_AGENT_ID`.
+
+Configure no GitHub um webhook de `pull_request` apontando para `POST /api/integrations/github/webhook`; use o mesmo segredo forte em `SPOTPATCH_GITHUB_WEBHOOK_SECRET`. Isso permite concluir o card quando o merge ocorre fora do SpotPatch sem armazenar token GitHub.
+
 ## API key
 
 No Agent, abra **Connect → Call from your app → Create API key**. A chave deve ser por integração, ter expiração e ser rotacionada. O escopo de threads documentado inclui:
@@ -58,4 +64,5 @@ O stream `GET /api/:org/decopilot/threads/:threadId/stream` é SSE efêmero. Se 
 - `429`: limite; respeitar backoff.
 - `500`/`503`: falha temporária, Connection inativa ou upstream indisponível.
 - Thread concluída sem SAVE: run incompleto; não derive contrato do texto final.
-- GitHub falha: verifique Connection ativa e o conjunto mínimo de tools, nunca adicione merge como atalho.
+- GitHub falha na execução: verifique a Connection sem ampliar para merge/deploy.
+- Produção falha: verifique a Connection exclusiva do agente de produção, checks obrigatórios, webhook assinado e o provedor de deploy.

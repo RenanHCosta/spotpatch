@@ -1,17 +1,27 @@
 import { decoClientFromEnv, mapDecoStatus } from "@spotpatch/deco-studio";
 import type { AgentRun } from "@spotpatch/shared";
-import { investigationResultSchema, executionResultSchema } from "@spotpatch/shared";
+import {
+  executionResultSchema,
+  investigationResultSchema,
+  productionResultSchema,
+} from "@spotpatch/shared";
 import {
   assertTransition,
   investigationTarget,
   validateExecutionPolicy,
   validateInvestigationPolicy,
+  validateProductionPolicy,
 } from "@spotpatch/workflow";
 import { getStore } from "./store";
-import { executionAgentMessage, investigationAgentMessage } from "./agent-tools";
+import {
+  executionAgentMessage,
+  investigationAgentMessage,
+  productionAgentMessage,
+} from "./agent-tools";
 export interface AgentOrchestrator {
   startInvestigation(input: { feedbackId: string; idempotencyKey: string }): Promise<AgentRun>;
   startExecution(input: { feedbackId: string; idempotencyKey: string }): Promise<AgentRun>;
+  startProduction(input: { feedbackId: string; idempotencyKey: string }): Promise<AgentRun>;
   syncRun(input: { runId: string; feedbackId: string }): Promise<AgentRun>;
 }
 async function requireFeedback(id: string) {
@@ -77,6 +87,27 @@ export class DemoAgentOrchestrator implements AgentOrchestrator {
       started_at: new Date().toISOString(),
     });
   }
+  async startProduction({
+    feedbackId,
+    idempotencyKey,
+  }: {
+    feedbackId: string;
+    idempotencyKey: string;
+  }) {
+    const store = getStore(),
+      feedback = await requireFeedback(feedbackId);
+    if (feedback.status !== "pull_request_opened" || !feedback.execution?.pullRequestUrl)
+      throw new Error("Pull request is not ready for production");
+    const run = await store.createRun(feedback, "production", "demo", idempotencyKey);
+    await store.addEvent(feedbackId, "operator", "Operador", "production_requested");
+    return store.updateRun(run.id, {
+      agent_id: "demo-release",
+      status: "in_progress",
+      thread_id: `demo-thread-${run.id}`,
+      task_id: `demo-task-${run.id}`,
+      started_at: new Date().toISOString(),
+    });
+  }
   async syncRun({ runId, feedbackId }: { runId: string; feedbackId: string }) {
     const store = getStore(),
       feedback = await requireFeedback(feedbackId),
@@ -119,17 +150,36 @@ export class DemoAgentOrchestrator implements AgentOrchestrator {
         finished_at: new Date().toISOString(),
       });
       if (target === "needs_information") {
-        await store.transition(
-          feedbackId,
-          target,
-          "investigator_agent",
-          "investigation_saved",
-          { mode: "demo" },
-        );
+        await store.transition(feedbackId, target, "investigator_agent", "investigation_saved", {
+          mode: "demo",
+        });
       } else {
         await this.startExecution({ feedbackId, idempotencyKey: `auto:${run.id}` });
       }
       return completed;
+    }
+    if (run.run_type === "production") {
+      const result = productionResultSchema.parse({
+        summary: "Pull request simulado publicado em produção.",
+        productionUrl: feedback.project.site_url,
+        deploymentId: `demo-deployment-${feedback.public_number}`,
+        pullRequestMerged: true,
+        deployedAt: new Date().toISOString(),
+      });
+      validateProductionPolicy(result, feedback.project.repository_provider);
+      await store.updateExecutionDelivery(feedbackId, {
+        ...result,
+        mergedAt: result.deployedAt,
+      });
+      await store.transition(feedbackId, "completed", "release_agent", "production_deployed", {
+        simulated: true,
+        productionUrl: result.productionUrl,
+      });
+      return store.updateRun(run.id, {
+        status: "completed",
+        result_payload: result,
+        finished_at: new Date().toISOString(),
+      });
     }
     const investigation = feedback.investigation;
     if (!investigation) throw new Error("Executable investigation not found");
@@ -140,6 +190,7 @@ export class DemoAgentOrchestrator implements AgentOrchestrator {
       commitSha: "d3adbeef42",
       pullRequestNumber: feedback.public_number,
       pullRequestUrl: `https://pull-request.invalid/spotpatch-demo/${feedback.public_number}`,
+      previewUrl: `https://preview.invalid/spotpatch-demo/${feedback.public_number}`,
       changedFiles: [
         {
           path: "src/components/ProductCard.tsx",
@@ -263,18 +314,62 @@ export class DecoStudioAgentOrchestrator implements AgentOrchestrator {
       started_at: new Date().toISOString(),
     });
   }
+  async startProduction({
+    feedbackId,
+    idempotencyKey,
+  }: {
+    feedbackId: string;
+    idempotencyKey: string;
+  }) {
+    const store = getStore(),
+      feedback = await requireFeedback(feedbackId),
+      agentId = feedback.project.production_agent_id || process.env.DECO_STUDIO_PRODUCTION_AGENT_ID;
+    if (feedback.status !== "pull_request_opened" || !feedback.execution?.pullRequestUrl)
+      throw new Error("Pull request is not ready for production");
+    if (!agentId) throw new Error("Production agent is not configured");
+    const run = await store.createRun(feedback, "production", "deco_studio", idempotencyKey);
+    await store.updateRun(run.id, { agent_id: agentId });
+    await store.addEvent(feedbackId, "operator", "Operador", "production_requested");
+    const client = decoClientFromEnv(),
+      thread = await client.createThread({ title: `SpotPatch production ${feedback.id}`, agentId });
+    const started = await client.runAgent({
+      threadId: thread.id,
+      agentId,
+      tier: feedback.project.agent_tier,
+      message: productionAgentMessage({ feedbackId: feedback.id, runId: run.id, agentId }),
+    });
+    return store.updateRun(run.id, {
+      status: "in_progress",
+      thread_id: thread.id,
+      task_id: started.taskId,
+      started_at: new Date().toISOString(),
+    });
+  }
   async syncRun({ runId, feedbackId }: { runId: string; feedbackId: string }) {
     const store = getStore(),
       feedback = await requireFeedback(feedbackId),
       run = feedback.runs.find((v) => v.id === runId);
     if (!run?.thread_id) throw new Error("Run thread is missing");
+    if (run.status !== "in_progress") return run;
     const thread = await decoClientFromEnv().getThread({ threadId: run.thread_id }),
       mapped = mapDecoStatus(thread.status);
     if (mapped === "failed") {
-      await store.transition(feedbackId, "failed", "system", "agent_run_failed");
+      if (run.run_type === "production")
+        await store.addEvent(feedbackId, "system", "Sistema", "production_failed");
+      else await store.transition(feedbackId, "failed", "system", "agent_run_failed");
       return store.updateRun(run.id, {
         status: "failed",
         error_message: "Deco Studio thread failed",
+        finished_at: new Date().toISOString(),
+      });
+    }
+    if (mapped === "completed") {
+      if (run.run_type === "production")
+        await store.addEvent(feedbackId, "system", "Sistema", "production_result_missing");
+      else await store.transition(feedbackId, "failed", "system", "agent_result_missing");
+      return store.updateRun(run.id, {
+        status: "failed",
+        error_message: "Deco Studio thread completed without the required SAVE tool",
         finished_at: new Date().toISOString(),
       });
     }

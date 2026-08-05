@@ -5,6 +5,7 @@ import type {
   FeedbackCreateInput,
   FeedbackStatus,
   InvestigationResult,
+  ProductionResult,
   Project,
 } from "@spotpatch/shared";
 import { generateCodeSearchHints, matchesDomain } from "@spotpatch/security";
@@ -41,7 +42,7 @@ export type InvestigationRecord = InvestigationResult & {
   agent_run_id: string;
   created_at: string;
 };
-export type ExecutionRecord = ExecutionResult & {
+export type ExecutionRecord = Omit<ExecutionResult, "previewUrl"> & {
   id: string;
   feedback_item_id: string;
   investigation_id: string;
@@ -49,6 +50,11 @@ export type ExecutionRecord = ExecutionResult & {
   status: string;
   started_at: string;
   finished_at: string | null;
+  previewUrl: string | null;
+  productionUrl: string | null;
+  productionDeploymentId: string | null;
+  mergedAt: string | null;
+  deployedAt: string | null;
 };
 export type EventRecord = {
   id: string;
@@ -77,6 +83,11 @@ export interface SpotPatchStore {
   listPage(projectId: string, url: string): Promise<FeedbackRecord[]>;
   listFeedback(): Promise<FeedbackDetail[]>;
   getFeedback(id: string): Promise<FeedbackDetail | null>;
+  getFeedbackByPullRequest(
+    owner: string,
+    repository: string,
+    pullRequestNumber: number,
+  ): Promise<FeedbackDetail | null>;
   transition(
     id: string,
     next: FeedbackStatus,
@@ -86,7 +97,7 @@ export interface SpotPatchStore {
   ): Promise<FeedbackDetail>;
   createRun(
     feedback: FeedbackDetail,
-    type: "investigation" | "execution",
+    type: "investigation" | "execution" | "production",
     provider: "demo" | "deco_studio",
     key: string,
   ): Promise<AgentRun>;
@@ -101,6 +112,10 @@ export interface SpotPatchStore {
     investigationId: string,
     runId: string,
     result: ExecutionResult,
+  ): Promise<ExecutionRecord>;
+  updateExecutionDelivery(
+    feedbackId: string,
+    result: Partial<ProductionResult> & { mergedAt?: string },
   ): Promise<ExecutionRecord>;
   addEvent(
     feedbackId: string,
@@ -139,6 +154,7 @@ const DEMO_PROJECT: Project = {
   deco_studio_org_slug: null,
   investigation_agent_id: null,
   execution_agent_id: null,
+  production_agent_id: null,
   agent_tier: "smart",
   is_active: true,
   created_at: now(),
@@ -246,6 +262,18 @@ class MemoryStore implements SpotPatchStore {
       events: this.events.filter((v) => v.feedback_item_id === id),
     };
   }
+  async getFeedbackByPullRequest(owner: string, repository: string, pullRequestNumber: number) {
+    for (const execution of this.executions.values()) {
+      if (execution.pullRequestNumber !== pullRequestNumber) continue;
+      const feedback = await this.getFeedback(execution.feedback_item_id);
+      if (
+        feedback?.project.repository_owner.toLowerCase() === owner.toLowerCase() &&
+        feedback.project.repository_name.toLowerCase() === repository.toLowerCase()
+      )
+        return feedback;
+    }
+    return null;
+  }
   async transition(
     id: string,
     next: FeedbackStatus,
@@ -267,7 +295,7 @@ class MemoryStore implements SpotPatchStore {
   }
   async createRun(
     feedback: FeedbackDetail,
-    type: "investigation" | "execution",
+    type: "investigation" | "execution" | "production",
     provider: "demo" | "deco_studio",
     key: string,
   ) {
@@ -287,7 +315,9 @@ class MemoryStore implements SpotPatchStore {
       agent_id:
         type === "investigation"
           ? feedback.project.investigation_agent_id
-          : feedback.project.execution_agent_id,
+          : type === "execution"
+            ? feedback.project.execution_agent_id
+            : feedback.project.production_agent_id,
       thread_id: null,
       task_id: null,
       status: "queued",
@@ -339,9 +369,32 @@ class MemoryStore implements SpotPatchStore {
       status: "pull_request_opened",
       started_at: now(),
       finished_at: now(),
+      productionUrl: null,
+      productionDeploymentId: null,
+      mergedAt: null,
+      deployedAt: null,
     };
     this.executions.set(row.id, row);
     return row;
+  }
+  async updateExecutionDelivery(
+    feedbackId: string,
+    result: Partial<ProductionResult> & { mergedAt?: string },
+  ) {
+    const execution = [...this.executions.values()]
+      .filter((value) => value.feedback_item_id === feedbackId)
+      .at(-1);
+    if (!execution) throw new Error("Execution not found");
+    const updated: ExecutionRecord = {
+      ...execution,
+      productionUrl: result.productionUrl ?? execution.productionUrl,
+      productionDeploymentId: result.deploymentId ?? execution.productionDeploymentId,
+      mergedAt: result.mergedAt ?? execution.mergedAt,
+      deployedAt: result.deployedAt ?? execution.deployedAt,
+      status: result.deployedAt ? "deployed" : execution.status,
+    };
+    this.executions.set(updated.id, updated);
+    return updated;
   }
   async addEvent(
     feedbackId: string,
@@ -628,12 +681,49 @@ class SupabaseStore extends MemoryStore {
       commitSha: row.commit_sha === null ? null : String(row.commit_sha),
       pullRequestNumber: row.pull_request_number === null ? null : Number(row.pull_request_number),
       pullRequestUrl: row.pull_request_url === null ? null : String(row.pull_request_url),
+      previewUrl: row.preview_url === null ? null : String(row.preview_url),
+      productionUrl: row.production_url === null ? null : String(row.production_url),
+      productionDeploymentId:
+        row.production_deployment_id === null ? null : String(row.production_deployment_id),
+      mergedAt: row.merged_at === null ? null : String(row.merged_at),
+      deployedAt: row.deployed_at === null ? null : String(row.deployed_at),
       changedFiles: row.changed_files as ExecutionResult["changedFiles"],
       checks: row.checks as ExecutionResult["checks"],
       warnings: row.warnings as string[],
       started_at: String(row.started_at),
       finished_at: row.finished_at === null ? null : String(row.finished_at),
     };
+  }
+  override async getFeedbackByPullRequest(
+    owner: string,
+    repository: string,
+    pullRequestNumber: number,
+  ) {
+    const projects = await getSupabase()
+      .from("projects")
+      .select("id")
+      .ilike("repository_owner", owner)
+      .ilike("repository_name", repository);
+    if (projects.error) throw projects.error;
+    const projectIds = (projects.data ?? []).map((row) => String(row.id));
+    if (!projectIds.length) return null;
+    const feedbackItems = await getSupabase()
+      .from("feedback_items")
+      .select("id")
+      .in("project_id", projectIds);
+    if (feedbackItems.error) throw feedbackItems.error;
+    const feedbackIds = (feedbackItems.data ?? []).map((row) => String(row.id));
+    if (!feedbackIds.length) return null;
+    const execution = await getSupabase()
+      .from("executions")
+      .select("feedback_item_id")
+      .eq("pull_request_number", pullRequestNumber)
+      .in("feedback_item_id", feedbackIds)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (execution.error) throw execution.error;
+    return execution.data ? this.getFeedback(String(execution.data.feedback_item_id)) : null;
   }
   override async transition(
     id: string,
@@ -658,7 +748,7 @@ class SupabaseStore extends MemoryStore {
   }
   override async createRun(
     feedback: FeedbackDetail,
-    type: "investigation" | "execution",
+    type: "investigation" | "execution" | "production",
     provider: "demo" | "deco_studio",
     key: string,
   ) {
@@ -670,7 +760,9 @@ class SupabaseStore extends MemoryStore {
       agent_id:
         type === "investigation"
           ? feedback.project.investigation_agent_id
-          : feedback.project.execution_agent_id,
+          : type === "execution"
+            ? feedback.project.execution_agent_id
+            : feedback.project.production_agent_id,
       status: "queued",
       request_payload: { idempotencyKey: key },
       idempotency_key: key,
@@ -759,6 +851,7 @@ class SupabaseStore extends MemoryStore {
       commit_sha: result.commitSha,
       pull_request_number: result.pullRequestNumber,
       pull_request_url: result.pullRequestUrl,
+      preview_url: result.previewUrl,
       summary: result.summary,
       changed_files: result.changedFiles,
       checks: result.checks,
@@ -767,6 +860,35 @@ class SupabaseStore extends MemoryStore {
       finished_at: now(),
     };
     const { data, error } = await getSupabase().from("executions").insert(row).select().single();
+    if (error) throw error;
+    return this.mapExecution(data as Record<string, unknown>);
+  }
+  override async updateExecutionDelivery(
+    feedbackId: string,
+    result: Partial<ProductionResult> & { mergedAt?: string },
+  ) {
+    const patch = {
+      ...(result.productionUrl ? { production_url: result.productionUrl } : {}),
+      ...(result.deploymentId !== undefined
+        ? { production_deployment_id: result.deploymentId }
+        : {}),
+      ...(result.mergedAt ? { merged_at: result.mergedAt } : {}),
+      ...(result.deployedAt ? { deployed_at: result.deployedAt, status: "deployed" } : {}),
+    };
+    const current = await getSupabase()
+      .from("executions")
+      .select("id")
+      .eq("feedback_item_id", feedbackId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
+    if (current.error) throw current.error;
+    const { data, error } = await getSupabase()
+      .from("executions")
+      .update(patch)
+      .eq("id", current.data.id)
+      .select()
+      .single();
     if (error) throw error;
     return this.mapExecution(data as Record<string, unknown>);
   }

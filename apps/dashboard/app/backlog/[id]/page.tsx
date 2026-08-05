@@ -37,9 +37,11 @@ type Detail = {
     summary: string;
     branchName: string;
     pullRequestUrl: string | null;
+    previewUrl: string | null;
+    productionUrl: string | null;
     changedFiles: Array<{ path: string; summary: string }>;
   } | null;
-  runs: Array<{ id: string; status: string; thread_id: string | null }>;
+  runs: Array<{ id: string; status: string; run_type: string; thread_id: string | null }>;
   events: Array<{ id: string; event_type: string; actor_label: string; created_at: string }>;
 };
 type SignedScreenshots = { viewportUrl: string | null; elementUrl: string | null; expiresIn: number };
@@ -81,6 +83,9 @@ export default function Feedback() {
   if (!query.data) return <AdminPage><div className="border-t border-danger p-3 text-danger">Feedback não encontrado.</div></AdminPage>;
   const data = query.data;
   const canInvestigate = ["new", "failed", "needs_information"].includes(data.status);
+  const productionInProgress = data.runs.some(
+    (run) => run.run_type === "production" && ["queued", "in_progress"].includes(run.status),
+  );
 
   return (
     <AdminPage>
@@ -92,6 +97,9 @@ export default function Feedback() {
           <Status value={data.status} />
           <div className="hidden gap-2 sm:flex">
             {canInvestigate && <button type="button" disabled={action.isPending} onClick={() => action.mutate("investigate")} className="h-8 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover">Investigar</button>}
+            {data.status === "pull_request_opened" && data.execution?.previewUrl && <a href={data.execution.previewUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-[4px] border border-line px-3 font-medium hover:bg-canvas">Ver preview <ExternalLink size={14} /></a>}
+            {data.status === "pull_request_opened" && <button type="button" disabled={action.isPending || productionInProgress} onClick={() => action.mutate("production")} className="h-8 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover disabled:opacity-50">{productionInProgress ? "Subindo..." : "Subir para produção"}</button>}
+            {data.status === "pull_request_opened" && data.execution?.pullRequestUrl && <a href={data.execution.pullRequestUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1 rounded-[4px] border border-line px-3 font-medium hover:bg-canvas">Abrir PR <ExternalLink size={14} /></a>}
             {!["completed", "rejected", "pull_request_opened"].includes(data.status) && <button type="button" onClick={() => action.mutate("reject")} className="h-8 rounded-[4px] border border-line px-3 hover:bg-canvas">Rejeitar</button>}
           </div>
         </header>
@@ -127,7 +135,11 @@ export default function Feedback() {
               <>
                 <SectionTitle>Execução</SectionTitle>
                 <div className="px-3 py-3"><p className="leading-5 text-mute">{data.execution.summary}</p><code className="mt-2 block font-mono text-[11px]">{data.execution.branchName}</code>
-                  {data.execution.pullRequestUrl && <a href={data.execution.pullRequestUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-accent underline">Abrir Pull Request <ExternalLink size={14} /></a>}
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {data.execution.previewUrl && <a href={data.execution.previewUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent underline">Ver preview <ExternalLink size={14} /></a>}
+                    {data.execution.pullRequestUrl && <a href={data.execution.pullRequestUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent underline">Abrir Pull Request <ExternalLink size={14} /></a>}
+                    {data.execution.productionUrl && <a href={data.execution.productionUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent underline">Ver produção <ExternalLink size={14} /></a>}
+                  </div>
                 </div>
               </>
             )}

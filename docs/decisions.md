@@ -25,3 +25,9 @@ There is no Supabase Auth. Tables have RLS enabled, public Data API roles are re
 ## 2026-08-03 — MVP runtime
 
 Demo mode is deterministic and contains no local reasoning. It persists the same contracts as the real orchestrator. Its simulated PR URL uses the reserved `.invalid` domain. In-process polling and rate limiting are acceptable only for a single local instance and are documented as production limitations.
+
+## 2026-08-05 — Pull request preview and production delivery
+
+Every new execution result must include the actual preview URL generated for its pull request. Production is a separate, operator-initiated Deco Studio run with a dedicated agent ID and narrowly scoped merge/deploy Connection. The production agent may merge only the persisted pull request and must report a verified live URL through `SAVE_PRODUCTION_RESULT`; SpotPatch remains the owner of state and audit.
+
+External merges are received at `POST /api/integrations/github/webhook`, authenticated with the GitHub `X-Hub-Signature-256` HMAC and `SPOTPATCH_GITHUB_WEBHOOK_SECRET`. A matching merged PR and a successful production result independently complete the feedback. SpotPatch still stores no GitHub token.

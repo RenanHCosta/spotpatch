@@ -41,13 +41,13 @@ type Item = {
   author_name: string | null;
   created_at: string;
   investigation: { confidence: number; riskLevel: string; canExecute?: boolean } | null;
-  execution: { pullRequestUrl: string | null } | null;
+  execution: { pullRequestUrl: string | null; previewUrl: string | null } | null;
 };
 
 type Detail = Item & {
   viewport: { width: number; height: number };
   element: { boundingBox: { width: number; height: number } };
-  runs: Array<{ id: string; status: string }>;
+  runs: Array<{ id: string; status: string; run_type: string }>;
   events: Array<{
     id: string;
     event_type: string;
@@ -201,6 +201,9 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
   }
 
   const detail = query.data;
+  const productionInProgress = detail?.runs.some(
+    (run) => run.run_type === "production" && ["queued", "in_progress"].includes(run.status),
+  );
   const panelStyle = { "--detail-width": width + "px" } as CSSProperties;
 
   return (
@@ -283,9 +286,11 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
             </section>
           </div>
           {action.error && <div className="border-t border-danger px-3 py-2 text-[11.5px] text-danger">{action.error.message}</div>}
-          <div className="flex shrink-0 gap-2 border-t border-line bg-surface p-3">
+          <div className="flex shrink-0 flex-wrap gap-2 border-t border-line bg-surface p-3">
             {canStartInvestigation(detail) && <button type="button" disabled={action.isPending} onClick={() => action.mutate("investigate")} className="h-9 flex-1 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover disabled:opacity-50">Investigar</button>}
-            {detail.status === "pull_request_opened" && detail.execution?.pullRequestUrl && <a href={detail.execution.pullRequestUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover">Abrir PR <ExternalLink size={14} /></a>}
+            {detail.status === "pull_request_opened" && detail.execution?.previewUrl && <a href={detail.execution.previewUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-[4px] border border-line bg-surface px-3 font-semibold text-ink hover:bg-canvas">Ver preview <ExternalLink size={14} /></a>}
+            {detail.status === "pull_request_opened" && <button type="button" disabled={action.isPending || productionInProgress} onClick={() => action.mutate("production")} className="h-9 flex-1 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover disabled:opacity-50">{productionInProgress ? "Subindo..." : "Subir para produção"}</button>}
+            {detail.status === "pull_request_opened" && detail.execution?.pullRequestUrl && <a href={detail.execution.pullRequestUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-[4px] border border-line bg-surface px-3 font-semibold text-ink hover:bg-canvas">Abrir PR <ExternalLink size={14} /></a>}
             {!["completed", "rejected", "pull_request_opened"].includes(detail.status) && <button type="button" disabled={action.isPending} onClick={() => action.mutate("reject")} className="h-9 rounded-[4px] border border-line bg-surface px-3 font-medium text-ink hover:bg-canvas disabled:opacity-50">Rejeitar</button>}
           </div>
         </>

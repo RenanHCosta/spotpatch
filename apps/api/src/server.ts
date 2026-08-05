@@ -6,6 +6,7 @@ import {
   feedbackCreateSchema,
   investigationResultSchema,
   ok,
+  productionResultSchema,
   type Project,
 } from "@spotpatch/shared";
 import {
@@ -13,6 +14,7 @@ import {
   matchesDomain,
   normalizeUrl,
   validateAdminToken,
+  verifyGitHubWebhookSignature,
   verifyAgentSignature,
 } from "@spotpatch/security";
 import {
@@ -20,6 +22,7 @@ import {
   investigationTarget,
   validateExecutionPolicy,
   validateInvestigationPolicy,
+  validateProductionPolicy,
 } from "@spotpatch/workflow";
 import { getOrchestrator } from "./orchestrator";
 import { getStore, type FeedbackRecord } from "./store";
@@ -113,12 +116,11 @@ const projectInput = z.object({
   repository_owner: z.string().min(1),
   repository_name: z.string().min(1),
   default_branch: z.string().min(1).default("main"),
-  agent_mode: z
-    .enum(["investigation_only", "autonomous_pr"])
-    .default("autonomous_pr"),
+  agent_mode: z.enum(["investigation_only", "autonomous_pr"]).default("autonomous_pr"),
   deco_studio_org_slug: z.string().nullable().optional(),
   investigation_agent_id: z.string().nullable().optional(),
   execution_agent_id: z.string().nullable().optional(),
+  production_agent_id: z.string().nullable().optional(),
   agent_tier: z.string().default("smart"),
   is_active: z.boolean().default(true),
 });
@@ -238,6 +240,11 @@ async function handleAdmin(request: NextRequest, parts: string[]) {
         ok(await getOrchestrator().startInvestigation({ feedbackId: id, idempotencyKey: key })),
         202,
       );
+    if (action === "production")
+      return json(
+        ok(await getOrchestrator().startProduction({ feedbackId: id, idempotencyKey: key })),
+        202,
+      );
     if (action === "reject") {
       const f = await store.getFeedback(id);
       if (!f) throw new Error("Feedback not found");
@@ -329,7 +336,7 @@ async function callAgentTool(name: AgentToolName, rawArgs: Record<string, unknow
     run = feedback.runs.find((candidate) => candidate.id === runId);
   if (!run) throw new Error("Run does not belong to feedback");
   if (run.agent_id !== args.agentId) throw new Error("Agent is not authorized for this run");
-  if (!allowedRunTypes[name].includes(run.run_type as "investigation" | "execution"))
+  if (!allowedRunTypes[name].includes(run.run_type as "investigation" | "execution" | "production"))
     throw new Error("Tool is not authorized for this run type");
   if (name === "GET_FEEDBACK_CONTEXT")
     return {
@@ -387,12 +394,7 @@ async function callAgentTool(name: AgentToolName, rawArgs: Record<string, unknow
       finished_at: new Date().toISOString(),
     });
     if (target === "needs_information") {
-      await store.transition(
-        feedbackId,
-        target,
-        "investigator_agent",
-        "investigation_saved",
-      );
+      await store.transition(feedbackId, target, "investigator_agent", "investigation_saved");
     } else {
       await getOrchestrator().startExecution({
         feedbackId,
@@ -470,13 +472,72 @@ async function callAgentTool(name: AgentToolName, rawArgs: Record<string, unknow
     });
     return store.transition(feedbackId, "failed", "executor_agent", "execution_failed");
   }
+  if (name === "GET_PRODUCTION_CONTEXT") {
+    if (feedback.status !== "pull_request_opened" || !feedback.execution?.pullRequestUrl)
+      throw new Error("Pull request is not ready for production");
+    return {
+      repository: {
+        provider: feedback.project.repository_provider,
+        owner: feedback.project.repository_owner,
+        name: feedback.project.repository_name,
+        defaultBranch: feedback.project.default_branch,
+      },
+      pullRequest: {
+        number: feedback.execution.pullRequestNumber,
+        url: feedback.execution.pullRequestUrl,
+        branch: feedback.execution.branchName,
+        commitSha: feedback.execution.commitSha,
+      },
+      previewUrl: feedback.execution.previewUrl,
+      productionUrl: feedback.project.site_url,
+    };
+  }
+  if (name === "SAVE_PRODUCTION_RESULT") {
+    if (!runId || run.run_type !== "production" || run.status !== "in_progress")
+      throw new Error("Production run is not active");
+    if (!feedback.execution) throw new Error("Execution not found");
+    const result = productionResultSchema.parse(args.result);
+    validateProductionPolicy(result, feedback.project.repository_provider);
+    const saved = await store.updateExecutionDelivery(feedbackId, {
+      ...result,
+      ...(result.pullRequestMerged ? { mergedAt: result.deployedAt } : {}),
+    });
+    if (feedback.status === "pull_request_opened")
+      await store.transition(feedbackId, "completed", "release_agent", "production_deployed", {
+        productionUrl: result.productionUrl,
+        deploymentId: result.deploymentId,
+      });
+    await store.updateRun(runId, {
+      status: "completed",
+      result_payload: result,
+      finished_at: new Date().toISOString(),
+    });
+    return saved;
+  }
+  if (name === "MARK_PRODUCTION_FAILED") {
+    if (!runId || run.run_type !== "production" || run.status !== "in_progress")
+      throw new Error("Production run is not active");
+    const error = z.string().max(2000).parse(args.error);
+    await store.updateRun(runId, {
+      status: "failed",
+      error_message: error,
+      finished_at: new Date().toISOString(),
+    });
+    return store.addEvent(feedbackId, "release_agent", "Publicação", "production_failed", {
+      error,
+    });
+  }
   if (name === "ADD_FEEDBACK_EVENT") {
     const expectedActor =
-      run.run_type === "investigation" ? "investigator_agent" : "executor_agent";
+      run.run_type === "investigation"
+        ? "investigator_agent"
+        : run.run_type === "production"
+          ? "release_agent"
+          : "executor_agent";
     if (args.actorType !== expectedActor) throw new Error("Actor does not match the active run");
     return store.addEvent(
       feedbackId,
-      z.enum(["investigator_agent", "executor_agent"]).parse(args.actorType),
+      z.enum(["investigator_agent", "executor_agent", "release_agent"]).parse(args.actorType),
       "Agent",
       z.string().max(100).parse(args.eventType),
       args.payload,
@@ -484,6 +545,48 @@ async function callAgentTool(name: AgentToolName, rawArgs: Record<string, unknow
   }
   throw new Error("Unknown agent tool");
 }
+async function handleIntegrations(request: NextRequest, parts: string[]) {
+  if (request.method !== "POST" || parts.join("/") !== "github/webhook")
+    return json(fail("NOT_FOUND", "Endpoint de integração não encontrado."), 404);
+  const raw = await request.text();
+  if (
+    !verifyGitHubWebhookSignature(
+      raw,
+      process.env.SPOTPATCH_GITHUB_WEBHOOK_SECRET,
+      request.headers.get("x-hub-signature-256"),
+    )
+  )
+    return json(fail("INVALID_SIGNATURE", "Assinatura do webhook inválida."), 401);
+  if (request.headers.get("x-github-event") !== "pull_request") return json(ok({ ignored: true }));
+  const event = z
+    .object({
+      action: z.string(),
+      repository: z.object({ name: z.string(), owner: z.object({ login: z.string() }) }),
+      pull_request: z.object({
+        number: z.number().int().positive(),
+        merged: z.boolean(),
+        merged_at: z.string().datetime().nullable(),
+      }),
+    })
+    .parse(JSON.parse(raw));
+  if (event.action !== "closed" || !event.pull_request.merged) return json(ok({ ignored: true }));
+  const store = getStore();
+  const feedback = await store.getFeedbackByPullRequest(
+    event.repository.owner.login,
+    event.repository.name,
+    event.pull_request.number,
+  );
+  if (!feedback) return json(ok({ ignored: true }));
+  const mergedAt = event.pull_request.merged_at ?? new Date().toISOString();
+  await store.updateExecutionDelivery(feedback.id, { mergedAt });
+  if (feedback.status === "pull_request_opened")
+    await store.transition(feedback.id, "completed", "system", "pull_request_merged", {
+      pullRequestNumber: event.pull_request.number,
+      mergedAt,
+    });
+  return json(ok({ completed: true, feedbackId: feedback.id }));
+}
+
 async function handleAgents(request: NextRequest, parts: string[]) {
   const raw = await request.text();
   await requireAgent(request, raw);
@@ -581,7 +684,9 @@ export async function handleApiRequest(
           ? await handleAdmin(request, path)
           : scope === "agents"
             ? await handleAgents(request, path)
-            : json(fail("NOT_FOUND", "Endpoint não encontrado."), 404);
+            : scope === "integrations"
+              ? await handleIntegrations(request, path)
+              : json(fail("NOT_FOUND", "Endpoint não encontrado."), 404);
     console.info(
       JSON.stringify({
         level: "info",

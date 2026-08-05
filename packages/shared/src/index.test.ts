@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { executionResultSchema, investigationResultSchema } from "./index";
+import { executionResultSchema, investigationResultSchema, productionResultSchema } from "./index";
 
 describe("agent result schemas", () => {
   it("rejects investigation confidence outside 0..1", () => {
@@ -21,5 +21,17 @@ describe("agent result schemas", () => {
 
   it("requires a valid execution contract", () => {
     expect(() => executionResultSchema.parse({ summary: "incomplete" })).toThrow();
+  });
+
+  it("requires a verified production URL and timestamp", () => {
+    expect(
+      productionResultSchema.parse({
+        summary: "published",
+        productionUrl: "https://example.com",
+        deploymentId: "deployment-1",
+        pullRequestMerged: true,
+        deployedAt: new Date().toISOString(),
+      }),
+    ).toMatchObject({ pullRequestMerged: true });
   });
 });

@@ -33,3 +33,17 @@ export function verifyAgentSignature(
     actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
   );
 }
+
+export function verifyGitHubWebhookSignature(
+  body: string,
+  secret: string | undefined,
+  signature: string | null | undefined,
+): boolean {
+  if (!secret || !signature?.startsWith("sha256=")) return false;
+  const expected = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
+  );
+}

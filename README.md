@@ -91,11 +91,11 @@ Cadastre pelo dashboard ou `POST /api/admin/projects`. `allowed_domains` aceita 
 
 Veja [docs/deco-studio.md](docs/deco-studio.md). Em resumo:
 
-1. Crie Investigator e Executor no Deco Studio.
+1. Crie Investigator, Executor e um agente separado de Produção no Deco Studio.
 2. Registre a API MCP do SpotPatch como Connection com secret próprio.
-3. Conceda ao Investigator apenas leitura no GitHub; ao Executor, branch/arquivo/commit/PR.
-4. Não exponha merge, deploy, secrets ou controles administrativos do repositório.
-5. Crie API key pelo diálogo “Call from your app”, configure IDs e use `SPOTPATCH_AGENT_PROVIDER=deco_studio`.
+3. Conceda ao Investigator apenas leitura no GitHub; ao Executor, branch/arquivo/commit/PR; ao agente de Produção, somente merge do PR alvo e deploy/verificação.
+4. Nunca exponha merge/deploy ao browser ou aos outros agentes, nem conceda secrets, delete, branch protection ou alteração direta da branch padrão.
+5. Configure o webhook GitHub assinado, crie a API key pelo diálogo “Call from your app”, configure IDs e use `SPOTPATCH_AGENT_PROVIDER=deco_studio`.
 
 ## Modo demo
 
