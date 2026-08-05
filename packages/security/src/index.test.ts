@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   consumeRateLimit,
@@ -8,6 +9,7 @@ import {
   signAgentPayload,
   validateAdminToken,
   verifyAgentSignature,
+  verifyGitHubWebhookSignature,
 } from "./index";
 describe("security", () => {
   it("normalizes tracking but preserves functional params", () =>
@@ -34,6 +36,12 @@ describe("security", () => {
   it("validates the administrative token in constant-time form", () => {
     expect(validateAdminToken("demo", "demo")).toBe(true);
     expect(validateAdminToken("bad", "demo")).toBe(false);
+  });
+  it("verifies GitHub webhook signatures", () => {
+    const body = '{"action":"closed"}';
+    const signature = `sha256=${createHmac("sha256", "secret").update(body).digest("hex")}`;
+    expect(verifyGitHubWebhookSignature(body, "secret", signature)).toBe(true);
+    expect(verifyGitHubWebhookSignature(body + "x", "secret", signature)).toBe(false);
   });
   it("rate limits", () => {
     const key = crypto.randomUUID();

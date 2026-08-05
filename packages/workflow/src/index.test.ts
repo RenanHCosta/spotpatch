@@ -4,6 +4,7 @@ import {
   assertTransition,
   canTransition,
   investigationTarget,
+  validateProductionPolicy,
   validateInvestigationPolicy,
 } from "./index";
 describe("workflow", () => {
@@ -47,4 +48,17 @@ describe("workflow", () => {
         canExecute: true,
       }).canExecute,
     ).toBe(false));
+  it("requires a merged pull request for GitHub production delivery", () =>
+    expect(() =>
+      validateProductionPolicy(
+        {
+          summary: "published",
+          productionUrl: "https://example.com",
+          deploymentId: null,
+          pullRequestMerged: false,
+          deployedAt: new Date().toISOString(),
+        },
+        "github",
+      ),
+    ).toThrow("merge"));
 });

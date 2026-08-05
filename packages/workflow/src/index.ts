@@ -1,4 +1,9 @@
-import type { ExecutionResult, FeedbackStatus, InvestigationResult } from "@spotpatch/shared";
+import type {
+  ExecutionResult,
+  FeedbackStatus,
+  InvestigationResult,
+  ProductionResult,
+} from "@spotpatch/shared";
 import { isSensitiveFile } from "@spotpatch/security";
 const transitions: Record<FeedbackStatus, readonly FeedbackStatus[]> = {
   new: ["queued_for_investigation", "rejected"],
@@ -56,6 +61,12 @@ export function validateExecutionPolicy(
     throw new Error("Pull request URL does not match provider");
   if (result.changedFiles.some((f) => isSensitiveFile(f.path)))
     throw new Error("Execution attempted to change a sensitive file");
+}
+export function validateProductionPolicy(result: ProductionResult, provider: string): void {
+  const url = new URL(result.productionUrl);
+  if (!/^https?:$/.test(url.protocol)) throw new Error("Production URL must use HTTP or HTTPS");
+  if (provider === "github" && !result.pullRequestMerged)
+    throw new Error("Production delivery must merge the pull request");
 }
 export function idempotencyScope(operation: string, id: string, key: string): string {
   return `${operation}:${id}:${key}`;

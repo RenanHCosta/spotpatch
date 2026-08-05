@@ -141,6 +141,7 @@ export const executionResultSchema = z.object({
     .nullable(),
   pullRequestNumber: z.number().int().positive().nullable(),
   pullRequestUrl: z.string().url().max(2048).nullable(),
+  previewUrl: z.string().url().max(2048),
   changedFiles: z
     .array(
       z.object({
@@ -162,6 +163,15 @@ export const executionResultSchema = z.object({
   warnings: z.array(boundedText(1000)).max(50),
 });
 export type ExecutionResult = z.infer<typeof executionResultSchema>;
+
+export const productionResultSchema = z.object({
+  summary: boundedText(5000),
+  productionUrl: z.string().url().max(2048),
+  deploymentId: boundedText(500).nullable(),
+  pullRequestMerged: z.boolean(),
+  deployedAt: z.string().datetime(),
+});
+export type ProductionResult = z.infer<typeof productionResultSchema>;
 
 export type CodeSearchHint = {
   value: string;
@@ -190,6 +200,7 @@ export type Project = {
   deco_studio_org_slug: string | null;
   investigation_agent_id: string | null;
   execution_agent_id: string | null;
+  production_agent_id: string | null;
   agent_tier: string;
   is_active: boolean;
   created_at: string;
@@ -199,7 +210,7 @@ export type AgentRun = {
   id: string;
   project_id: string;
   feedback_item_id: string;
-  run_type: "investigation" | "execution" | "validation";
+  run_type: "investigation" | "execution" | "production" | "validation";
   provider: "deco_studio" | "demo";
   agent_id: string | null;
   thread_id: string | null;

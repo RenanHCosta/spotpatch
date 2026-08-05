@@ -20,7 +20,7 @@ Extensão e dashboard não recebem service role, Deco API key, GitHub credential
 
 Comentário, DOM, screenshot e repositório podem conter prompt injection. A sanitização remove scripts/styles/iframes, eventos, values e atributos secretos, limita comprimentos e aplica redaction. Prompt reforça limites, mas as tools impõem estado, schema, projeto, agente e arquivo independentemente do prompt.
 
-Arquivos `.env*`, secrets, workflows, auth, pagamentos, permissões, infraestrutura, migrations, deploy, produção, branch protection, lockfiles sem dependência e postinstall são sensíveis. Investigação é bloqueada; tentativa de execução falha e audita.
+Arquivos `.env*`, secrets, workflows, auth, pagamentos, permissões, infraestrutura, migrations, configuração de deploy, produção, branch protection, lockfiles sem dependência e postinstall são sensíveis. Investigação é bloqueada; tentativa de execução falha e audita. O agente de produção não edita esses arquivos: ele somente mergeia o PR persistido e aciona/verifica o deploy por tools dedicadas.
 
 ## Supabase
 

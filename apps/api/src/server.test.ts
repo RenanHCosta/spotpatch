@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
 import { handleApiRequest } from "./server";
 
@@ -63,7 +64,14 @@ describe("SpotPatch MCP endpoint", () => {
     const response = await rpc({ jsonrpc: "2.0", id: "tools", method: "tools/list" });
     const payload = await response.json();
     expect(response.status).toBe(200);
-    expect(payload.result.tools).toHaveLength(10);
+    expect(payload.result.tools).toHaveLength(13);
+    expect(payload.result.tools.map((tool: { name: string }) => tool.name)).toEqual(
+      expect.arrayContaining([
+        "GET_PRODUCTION_CONTEXT",
+        "SAVE_PRODUCTION_RESULT",
+        "MARK_PRODUCTION_FAILED",
+      ]),
+    );
     expect(payload.result.tools[0].inputSchema.required).toEqual(
       expect.arrayContaining(["feedbackId", "runId", "agentId"]),
     );
@@ -224,5 +232,44 @@ describe("SpotPatch feedback deletion", () => {
       { params: Promise.resolve({ path: ["admin", "feedback", feedbackId] }) },
     );
     expect(detailResponse.status).toBe(404);
+  });
+});
+
+describe("GitHub integration webhook", () => {
+  const previousSecret = process.env.SPOTPATCH_GITHUB_WEBHOOK_SECRET;
+
+  beforeEach(() => {
+    process.env.SPOTPATCH_GITHUB_WEBHOOK_SECRET = "github-webhook-secret";
+  });
+
+  afterEach(() => {
+    if (previousSecret === undefined) delete process.env.SPOTPATCH_GITHUB_WEBHOOK_SECRET;
+    else process.env.SPOTPATCH_GITHUB_WEBHOOK_SECRET = previousSecret;
+  });
+
+  it("rejects unsigned events", async () => {
+    const response = await handleApiRequest(
+      new NextRequest("http://localhost:3001/api/integrations/github/webhook", {
+        method: "POST",
+        body: "{}",
+      }),
+      { params: Promise.resolve({ path: ["integrations", "github", "webhook"] }) },
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it("accepts a signed non-PR event without changing state", async () => {
+    const raw = "{}";
+    const signature = `sha256=${createHmac("sha256", "github-webhook-secret").update(raw).digest("hex")}`;
+    const response = await handleApiRequest(
+      new NextRequest("http://localhost:3001/api/integrations/github/webhook", {
+        method: "POST",
+        headers: { "X-GitHub-Event": "ping", "X-Hub-Signature-256": signature },
+        body: raw,
+      }),
+      { params: Promise.resolve({ path: ["integrations", "github", "webhook"] }) },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true, data: { ignored: true } });
   });
 });

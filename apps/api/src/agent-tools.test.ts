@@ -4,6 +4,7 @@ import {
   executionAgentMessage,
   investigationAgentMessage,
   parseAgentToolArguments,
+  productionAgentMessage,
 } from "./agent-tools";
 
 const context = {
@@ -14,7 +15,7 @@ const context = {
 
 describe("SpotPatch agent tools", () => {
   it("publishes explicit closed schemas and safety annotations", () => {
-    expect(agentToolDefinitions).toHaveLength(10);
+    expect(agentToolDefinitions).toHaveLength(13);
     for (const definition of agentToolDefinitions) {
       expect(definition.inputSchema.required).toEqual(
         expect.arrayContaining(["feedbackId", "runId", "agentId"]),
@@ -52,5 +53,16 @@ describe("SpotPatch agent tools", () => {
     expect(message).toContain(`agentId=${context.agentId}`);
     expect(message).toContain("SAVE_EXECUTION_RESULT");
     expect(message).toContain("MARK_EXECUTION_FAILED");
+    expect(message).toContain("preview");
+  });
+
+  it("limits production messages to the persisted pull request", () => {
+    const message = productionAgentMessage(context);
+    expect(message).toContain(`feedbackId=${context.feedbackId}`);
+    expect(message).toContain(`runId=${context.runId}`);
+    expect(message).toContain(`agentId=${context.agentId}`);
+    expect(message).toContain("GET_PRODUCTION_CONTEXT");
+    expect(message).toContain("SAVE_PRODUCTION_RESULT");
+    expect(message).toContain("exact pull request");
   });
 });
