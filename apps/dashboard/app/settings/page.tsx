@@ -1,4 +1,9 @@
-﻿import { AdminPage } from "@/components/page";
+﻿"use client";
+import { useQuery } from "@tanstack/react-query";
+import { AdminPage } from "@/components/page";
+import { api } from "@/lib/api";
+
+type Configuration = { agentProvider: "demo" | "deco_studio"; decoStudioConfigured: boolean };
 
 function Section({
   title,
@@ -30,6 +35,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export default function Settings() {
+  const configuration = useQuery({
+    queryKey: ["configuration"],
+    queryFn: () => api<Configuration>("/api/admin/configuration"),
+  });
+  const provider = configuration.data?.agentProvider;
+  const isDecoStudio = provider === "deco_studio";
   return (
     <AdminPage>
       <div className="min-h-[calc(100vh-104px)] bg-surface">
@@ -38,13 +49,14 @@ export default function Settings() {
         </header>
         <Section title="Provider dos agentes">
           <Field label="Modo atual">
-            <span className="inline-flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-warn" />demonstração</span>
+            <span className="inline-flex items-center gap-1.5"><span className={`size-1.5 rounded-full ${configuration.isError ? "bg-mute-soft" : isDecoStudio ? "bg-accent" : "bg-warn"}`} />{configuration.isLoading ? "verificando" : configuration.isError ? "indisponível" : isDecoStudio ? "Deco Studio" : "demonstração"}</span>
           </Field>
           <Field label="Variável de ambiente">
-            <code className="break-all font-mono text-[11px]">SPOTPATCH_AGENT_PROVIDER=deco_studio</code>
+            <code className="break-all font-mono text-[11px]">SPOTPATCH_AGENT_PROVIDER={provider ?? "indisponível"}</code>
           </Field>
           <Field label="Execução">
-            <p className="max-w-2xl leading-5 text-mute">O modo demo usa resultados determinísticos e Pull Requests claramente simulados. Ative o provider somente depois de configurar agentes, API key e tools.</p>
+            <p className="max-w-2xl leading-5 text-mute">{configuration.isError ? "Estado operacional indisponível." : isDecoStudio ? configuration.data?.decoStudioConfigured ? "Credencial e organização do Deco Studio estão configuradas no servidor." : "O provider está ativo, mas falta configuração obrigatória do Deco Studio." : "O modo demo usa resultados determinísticos e Pull Requests claramente simulados."}</p>
+            {configuration.error && <p className="mt-1 text-danger">Não foi possível consultar a configuração operacional.</p>}
           </Field>
         </Section>
         <Section title="Proteção administrativa do MVP">

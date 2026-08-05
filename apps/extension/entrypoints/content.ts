@@ -53,6 +53,16 @@ function selectableTargetAtPoint(x: number, y: number): Element | null {
       : raw;
   return isSelectable(target) ? target : null;
 }
+function selectableTargetFromEvent(event: MouseEvent): Element | null {
+  for (const candidate of event.composedPath()) {
+    if (!(candidate instanceof Element)) continue;
+    const target = candidate instanceof SVGElement
+      ? (candidate.closest("button,a,[role='button']") ?? candidate.ownerSVGElement ?? candidate)
+      : candidate;
+    if (isSelectable(target)) return target;
+  }
+  return selectableTargetAtPoint(event.clientX, event.clientY);
+}
 class Inspector {
   private project: Project | null = null;
   private hovered: Element | null = null;
@@ -135,7 +145,7 @@ class Inspector {
     this.hovered = null;
   }
   onMove = (event: MouseEvent) => {
-    const target = selectableTargetAtPoint(event.clientX, event.clientY);
+    const target = selectableTargetFromEvent(event);
     if (!target) {
       this.onSelectionViewportChange();
       return;
@@ -160,7 +170,7 @@ class Inspector {
     if (!this.hovered) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    const selected = selectableTargetAtPoint(event.clientX, event.clientY) ?? this.hovered;
+    const selected = selectableTargetFromEvent(event) ?? this.hovered;
     if (!selected) return;
     this.stop();
     void this.openForm(selected);

@@ -192,6 +192,18 @@ async function handlePublic(request: NextRequest, parts: string[]) {
 async function handleAdmin(request: NextRequest, parts: string[]) {
   requireAdmin(request);
   const store = getStore();
+  if (request.method === "GET" && parts[0] === "configuration")
+    return json(
+      ok({
+        agentProvider:
+          process.env.SPOTPATCH_AGENT_PROVIDER === "deco_studio" ? "deco_studio" : "demo",
+        decoStudioConfigured: Boolean(
+          process.env.DECO_STUDIO_BASE_URL &&
+            process.env.DECO_STUDIO_ORG &&
+            process.env.DECO_STUDIO_API_KEY,
+        ),
+      }),
+    );
   if (request.method === "GET" && parts[0] === "dashboard")
     return json(ok(await store.dashboard()));
   if (request.method === "GET" && parts[0] === "feedback" && !parts[1])

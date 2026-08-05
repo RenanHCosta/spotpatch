@@ -47,6 +47,7 @@ type Item = {
 type Detail = Item & {
   viewport: { width: number; height: number };
   element: { boundingBox: { width: number; height: number } };
+  runs: Array<{ id: string; status: string }>;
   events: Array<{
     id: string;
     event_type: string;
@@ -115,14 +116,20 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
   const [width, setWidth] = useState(420);
   const query = useQuery({
     queryKey: ["feedback", id],
-    queryFn: () => api<Detail>("/api/admin/feedback/" + id),
-    refetchInterval: 4000,
+    queryFn: async () => {
+      const current = await api<Detail>("/api/admin/feedback/" + id);
+      const active = current.runs.find((run) => run.status === "in_progress");
+      if (active) await api(`/api/admin/runs/${active.id}/sync`, { method: "POST", body: JSON.stringify({ feedbackId: id }) });
+      return active ? api<Detail>("/api/admin/feedback/" + id) : current;
+    },
+    refetchInterval: (state) => state.state.data?.runs.some((run) => run.status === "in_progress") ? 1000 : 4000,
   });
   const screenshots = useQuery({
     queryKey: ["feedback-screenshots", id],
     queryFn: () => api<SignedScreenshots>("/api/admin/feedback/" + id + "/screenshots"),
     enabled: Boolean(query.data),
     staleTime: 4 * 60 * 1000,
+    refetchInterval: 4 * 60 * 1000,
   });
   const action = useMutation({
     mutationFn: (name: string) =>

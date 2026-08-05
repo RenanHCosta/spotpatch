@@ -84,3 +84,57 @@ describe("SpotPatch MCP endpoint", () => {
     });
   });
 });
+
+describe("SpotPatch administrative configuration", () => {
+  const previous = {
+    adminToken: process.env.SPOTPATCH_ADMIN_TOKEN,
+    provider: process.env.SPOTPATCH_AGENT_PROVIDER,
+    baseUrl: process.env.DECO_STUDIO_BASE_URL,
+    org: process.env.DECO_STUDIO_ORG,
+    apiKey: process.env.DECO_STUDIO_API_KEY,
+    investigator: process.env.DECO_STUDIO_INVESTIGATION_AGENT_ID,
+    executor: process.env.DECO_STUDIO_EXECUTION_AGENT_ID,
+  };
+
+  beforeEach(() => {
+    process.env.SPOTPATCH_ADMIN_TOKEN = "test-admin-token";
+    process.env.SPOTPATCH_AGENT_PROVIDER = "deco_studio";
+    process.env.DECO_STUDIO_BASE_URL = "https://studio.example";
+    process.env.DECO_STUDIO_ORG = "example-org";
+    process.env.DECO_STUDIO_API_KEY = "secret-value";
+    process.env.DECO_STUDIO_INVESTIGATION_AGENT_ID = "investigator";
+    process.env.DECO_STUDIO_EXECUTION_AGENT_ID = "executor";
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries({
+      SPOTPATCH_ADMIN_TOKEN: previous.adminToken,
+      SPOTPATCH_AGENT_PROVIDER: previous.provider,
+      DECO_STUDIO_BASE_URL: previous.baseUrl,
+      DECO_STUDIO_ORG: previous.org,
+      DECO_STUDIO_API_KEY: previous.apiKey,
+      DECO_STUDIO_INVESTIGATION_AGENT_ID: previous.investigator,
+      DECO_STUDIO_EXECUTION_AGENT_ID: previous.executor,
+    })) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("reports provider readiness without exposing credentials", async () => {
+    const response = await handleApiRequest(
+      new NextRequest("http://localhost:3001/api/admin/configuration", {
+        headers: { "X-SpotPatch-Admin-Token": "test-admin-token" },
+      }),
+      { params: Promise.resolve({ path: ["admin", "configuration"] }) },
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      success: true,
+      data: { agentProvider: "deco_studio", decoStudioConfigured: true },
+    });
+    expect(JSON.stringify(payload)).not.toContain("secret-value");
+  });
+});

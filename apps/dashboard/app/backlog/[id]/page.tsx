@@ -66,6 +66,7 @@ export default function Feedback() {
     queryFn: () => api<SignedScreenshots>(`/api/admin/feedback/${id}/screenshots`),
     enabled: Boolean(query.data),
     staleTime: 240000,
+    refetchInterval: 240000,
   });
   const action = useMutation({
     mutationFn: (name: string) => api(`/api/admin/feedback/${id}/${name}`, {
