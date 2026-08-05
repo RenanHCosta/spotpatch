@@ -64,19 +64,19 @@ type SignedScreenshots = {
 const columns = [
   {
     id: "intake",
-    title: "Entrada",
-    statuses: ["new", "queued_for_investigation"],
+    title: "Recebido",
+    statuses: [
+      "new",
+      "queued_for_investigation",
+      "needs_information",
+      "failed",
+      "rejected",
+    ],
   },
   { id: "investigation", title: "Investigação", statuses: ["investigating"] },
-  { id: "approval", title: "Aprovação", statuses: ["awaiting_approval"] },
   { id: "execution", title: "Execução", statuses: ["queued_for_execution", "executing"] },
   { id: "pr", title: "Pull request", statuses: ["pull_request_opened"] },
   { id: "completed", title: "Concluído", statuses: ["completed"] },
-  {
-    id: "blocked",
-    title: "Bloqueados",
-    statuses: ["needs_information", "failed", "rejected"],
-  },
 ] as const;
 
 const priorityLabels: Record<string, string> = {
@@ -131,9 +131,31 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
         headers: { "Idempotency-Key": crypto.randomUUID() },
         body: "{}",
       }),
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: ["feedback", id] });
-      client.invalidateQueries({ queryKey: ["feedback"] });
+    onMutate: async (name) => {
+      if (name !== "investigate") return undefined;
+      await client.cancelQueries({ queryKey: ["feedback"] });
+      const previousList = client.getQueryData<Item[]>(["feedback"]);
+      const previousDetail = client.getQueryData<Detail>(["feedback", id]);
+      client.setQueryData<Item[]>(["feedback"], (current) =>
+        current?.map((item) =>
+          item.id === id ? { ...item, status: "investigating" } : item,
+        ),
+      );
+      client.setQueryData<Detail>(["feedback", id], (current) =>
+        current ? { ...current, status: "investigating" } : current,
+      );
+      return { previousList, previousDetail };
+    },
+    onError: (_error, name, context) => {
+      if (name !== "investigate" || !context) return;
+      client.setQueryData(["feedback"], context.previousList);
+      client.setQueryData(["feedback", id], context.previousDetail);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["feedback", id] }),
+        client.invalidateQueries({ queryKey: ["feedback"], exact: true }),
+      ]);
     },
   });
 
@@ -256,7 +278,6 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
           {action.error && <div className="border-t border-danger px-3 py-2 text-[11.5px] text-danger">{action.error.message}</div>}
           <div className="flex shrink-0 gap-2 border-t border-line bg-surface p-3">
             {canStartInvestigation(detail) && <button type="button" disabled={action.isPending} onClick={() => action.mutate("investigate")} className="h-9 flex-1 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover disabled:opacity-50">Investigar</button>}
-            {detail.status === "awaiting_approval" && <button type="button" disabled={!detail.investigation?.canExecute || action.isPending} onClick={() => action.mutate("approve")} className="h-9 flex-1 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover disabled:opacity-50">Aprovar</button>}
             {detail.status === "pull_request_opened" && detail.execution?.pullRequestUrl && <a href={detail.execution.pullRequestUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover">Abrir PR <ExternalLink size={14} /></a>}
             {!["completed", "rejected", "pull_request_opened"].includes(detail.status) && <button type="button" disabled={action.isPending} onClick={() => action.mutate("reject")} className="h-9 rounded-[4px] border border-line bg-surface px-3 font-medium text-ink hover:bg-canvas disabled:opacity-50">Rejeitar</button>}
           </div>
@@ -301,6 +322,7 @@ export default function Backlog() {
   const [intakeMenuOpen, setIntakeMenuOpen] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -352,7 +374,33 @@ export default function Backlog() {
         headers: { "Idempotency-Key": crypto.randomUUID() },
         body: "{}",
       }),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["feedback"] }),
+    onMutate: async (id) => {
+      await client.cancelQueries({ queryKey: ["feedback"], exact: true });
+      const previous = client.getQueryData<Item[]>(["feedback"]);
+      setOptimisticStatuses((current) => ({ ...current, [id]: "investigating" }));
+      client.setQueryData<Item[]>(["feedback"], (current) =>
+        current?.map((item) =>
+          item.id === id ? { ...item, status: "investigating" } : item,
+        ),
+      );
+      return { previous };
+    },
+    onError: (_error, id, context) => {
+      client.setQueryData(["feedback"], context?.previous);
+      setOptimisticStatuses((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    },
+    onSuccess: async (_data, id) => {
+      await client.invalidateQueries({ queryKey: ["feedback"], exact: true });
+      setOptimisticStatuses((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    },
   });
   const startSelectedInvestigations = useMutation({
     mutationFn: (ids: string[]) =>
@@ -365,15 +413,50 @@ export default function Backlog() {
           }),
         ),
       ),
-    onSuccess: () => {
+    onMutate: async (ids) => {
+      await client.cancelQueries({ queryKey: ["feedback"], exact: true });
+      const previous = client.getQueryData<Item[]>(["feedback"]);
+      setOptimisticStatuses((current) => ({
+        ...current,
+        ...Object.fromEntries(ids.map((id) => [id, "investigating"])),
+      }));
+      client.setQueryData<Item[]>(["feedback"], (current) =>
+        current?.map((item) =>
+          ids.includes(item.id) ? { ...item, status: "investigating" } : item,
+        ),
+      );
+      return { previous };
+    },
+    onError: (_error, ids, context) => {
+      client.setQueryData(["feedback"], context?.previous);
+      setOptimisticStatuses((current) => {
+        const next = { ...current };
+        for (const id of ids) delete next[id];
+        return next;
+      });
+    },
+    onSuccess: async (_data, ids) => {
       setSelectedIds(new Set());
-      client.invalidateQueries({ queryKey: ["feedback"] });
+      await client.invalidateQueries({ queryKey: ["feedback"], exact: true });
+      setOptimisticStatuses((current) => {
+        const next = { ...current };
+        for (const id of ids) delete next[id];
+        return next;
+      });
     },
   });
 
+  const feedbackRows = useMemo(
+    () =>
+      (query.data ?? []).map((item) => {
+        const optimisticStatus = optimisticStatuses[item.id];
+        return optimisticStatus ? { ...item, status: optimisticStatus } : item;
+      }),
+    [optimisticStatuses, query.data],
+  );
   const projectRows = useMemo(
-    () => (query.data ?? []).filter((item) => projectFilter === "all" || item.project.id === projectFilter),
-    [projectFilter, query.data],
+    () => feedbackRows.filter((item) => projectFilter === "all" || item.project.id === projectFilter),
+    [feedbackRows, projectFilter],
   );
   const counts = useMemo(() => {
     const result: Record<string, number> = {};
@@ -412,7 +495,7 @@ export default function Backlog() {
   const selectedActionIds = selectableRows
     .filter((item) => selectedIds.has(item.id))
     .map((item) => item.id);
-  const draggedItem = query.data?.find((item) => item.id === draggingId);
+  const draggedItem = feedbackRows.find((item) => item.id === draggingId);
   const canDropOnInvestigation = Boolean(draggedItem && canStartInvestigation(draggedItem));
 
   function handleDragStart(event: DragEvent<HTMLElement>, item: Item) {
@@ -425,7 +508,7 @@ export default function Backlog() {
   function handleDrop(event: DragEvent<HTMLElement>, columnId: string) {
     event.preventDefault();
     const id = event.dataTransfer.getData("text/plain") || draggingId;
-    const item = query.data?.find((candidate) => candidate.id === id);
+    const item = feedbackRows.find((candidate) => candidate.id === id);
     setDraggingId(null);
     setDropTarget(null);
     if (columnId === "investigation" && item && canStartInvestigation(item)) {

@@ -86,7 +86,7 @@ function ProjectDrawer({
           repository_owner: "deco-studio",
           repository_name: slug,
           default_branch: "main",
-          agent_mode: "approval_required",
+          agent_mode: "autonomous_pr",
           agent_tier: "smart",
           is_active: true,
         }),

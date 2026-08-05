@@ -5,7 +5,6 @@ const labels: Record<string, string> = {
   queued_for_investigation: "Na fila",
   investigating: "Investigando",
   needs_information: "Precisa de informação",
-  awaiting_approval: "Aguardando aprovação",
   queued_for_execution: "Execução na fila",
   executing: "Executando",
   pull_request_opened: "PR aberto",
@@ -16,7 +15,7 @@ const labels: Record<string, string> = {
 
 export function Status({ value, compact = false }: { value: string; compact?: boolean }) {
   const isOk = ["new", "pull_request_opened", "completed"].includes(value);
-  const isWarn = ["awaiting_approval", "needs_information"].includes(value);
+  const isWarn = ["needs_information"].includes(value);
   const isDanger = ["failed", "rejected"].includes(value);
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-[11.5px] text-mute">

@@ -37,7 +37,7 @@ Use somente tools autorizadas. Não faça merge, deploy ou alteração de secret
 Registre progresso e finalize por SAVE_EXECUTION_RESULT.
 ```
 
-Tools: `GET_APPROVED_INVESTIGATION`, `GET_PROJECT_CONTEXT`, `SAVE_EXECUTION_PROGRESS`, `SAVE_EXECUTION_RESULT`, `ADD_FEEDBACK_EVENT`, `MARK_EXECUTION_FAILED`.
+Tools: `GET_EXECUTABLE_INVESTIGATION`, `GET_PROJECT_CONTEXT`, `SAVE_EXECUTION_PROGRESS`, `SAVE_EXECUTION_RESULT`, `ADD_FEEDBACK_EVENT`, `MARK_EXECUTION_FAILED`.
 
 `ExecutionResult` exige resumo, branch diferente da base, base igual à configurada, commit opcional, número e URL de PR, arquivos alterados, checks e warnings. Sem PR é incompleto. Provider, paths e arquivos sensíveis são validados pelas tools.
 
@@ -45,7 +45,7 @@ Tools: `GET_APPROVED_INVESTIGATION`, `GET_PROJECT_CONTEXT`, `SAVE_EXECUTION_PROG
 
 O agent nunca atualiza status diretamente. SAVE/mark tools validam o run esperado, feedback, projeto e estado. Repetições usam `runId` e contratos persistidos; uma investigação ou execução ativa por feedback é garantida também por índice parcial. Falha registra evento redigido e move o workflow para `failed`.
 
-Exemplo Investigator: `GET_FEEDBACK_CONTEXT` → busca GitHub read-only → `SAVE_INVESTIGATION`. Exemplo Executor: `GET_APPROVED_INVESTIGATION` → branch → edição/commit/PR → `SAVE_EXECUTION_RESULT`.
+Exemplo Investigator: `GET_FEEDBACK_CONTEXT` → busca GitHub read-only → `SAVE_INVESTIGATION`. Exemplo Executor: `GET_EXECUTABLE_INVESTIGATION` → branch → edição/commit/PR → `SAVE_EXECUTION_RESULT`.
 
 O endpoint MCP suporta `initialize`, `notifications/initialized`, `ping`, `tools/list` e
 `tools/call`. Falhas de execução retornam um MCP tool result com `isError: true`; o agent deve

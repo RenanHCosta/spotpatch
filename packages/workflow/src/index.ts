@@ -3,9 +3,8 @@ import { isSensitiveFile } from "@spotpatch/security";
 const transitions: Record<FeedbackStatus, readonly FeedbackStatus[]> = {
   new: ["queued_for_investigation", "rejected"],
   queued_for_investigation: ["investigating", "failed"],
-  investigating: ["needs_information", "awaiting_approval", "failed"],
+  investigating: ["needs_information", "queued_for_execution", "failed"],
   needs_information: ["queued_for_investigation", "rejected"],
-  awaiting_approval: ["queued_for_execution", "rejected", "failed"],
   queued_for_execution: ["executing", "failed"],
   executing: ["pull_request_opened", "failed"],
   pull_request_opened: ["completed", "failed"],
@@ -21,7 +20,7 @@ export function assertTransition(from: FeedbackStatus, to: FeedbackStatus): void
 }
 export function investigationTarget(result: InvestigationResult): FeedbackStatus {
   if (result.requiresHumanInput) return "needs_information";
-  return result.canExecute ? "awaiting_approval" : "needs_information";
+  return result.canExecute ? "queued_for_execution" : "needs_information";
 }
 export function validateInvestigationPolicy(result: InvestigationResult): InvestigationResult {
   const sensitive = result.likelyFiles.some((f) => isSensitiveFile(f.path));

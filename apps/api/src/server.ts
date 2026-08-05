@@ -114,8 +114,8 @@ const projectInput = z.object({
   repository_name: z.string().min(1),
   default_branch: z.string().min(1).default("main"),
   agent_mode: z
-    .enum(["investigation_only", "approval_required", "autonomous_pr"])
-    .default("approval_required"),
+    .enum(["investigation_only", "autonomous_pr"])
+    .default("autonomous_pr"),
   deco_studio_org_slug: z.string().nullable().optional(),
   investigation_agent_id: z.string().nullable().optional(),
   execution_agent_id: z.string().nullable().optional(),
@@ -224,11 +224,6 @@ async function handleAdmin(request: NextRequest, parts: string[]) {
     if (action === "investigate")
       return json(
         ok(await getOrchestrator().startInvestigation({ feedbackId: id, idempotencyKey: key })),
-        202,
-      );
-    if (action === "approve")
-      return json(
-        ok(await getOrchestrator().startExecution({ feedbackId: id, idempotencyKey: key })),
         202,
       );
     if (action === "reject") {
@@ -373,17 +368,25 @@ async function callAgentTool(name: AgentToolName, rawArgs: Record<string, unknow
       throw new Error("Investigation is not active");
     const result = validateInvestigationPolicy(investigationResultSchema.parse(args.result));
     const saved = await store.saveInvestigation(feedbackId, runId, result);
-    await store.transition(
-      feedbackId,
-      investigationTarget(result),
-      "investigator_agent",
-      "investigation_saved",
-    );
+    const target = investigationTarget(result);
     await store.updateRun(runId, {
       status: "completed",
       result_payload: result,
       finished_at: new Date().toISOString(),
     });
+    if (target === "needs_information") {
+      await store.transition(
+        feedbackId,
+        target,
+        "investigator_agent",
+        "investigation_saved",
+      );
+    } else {
+      await getOrchestrator().startExecution({
+        feedbackId,
+        idempotencyKey: `auto:${runId}`,
+      });
+    }
     return saved;
   }
   if (name === "MARK_FEEDBACK_NEEDS_INFORMATION") {
@@ -409,12 +412,12 @@ async function callAgentTool(name: AgentToolName, rawArgs: Record<string, unknow
     });
     return transitioned;
   }
-  if (name === "GET_APPROVED_INVESTIGATION") {
+  if (name === "GET_EXECUTABLE_INVESTIGATION") {
     if (
       !["queued_for_execution", "executing"].includes(feedback.status) ||
       !feedback.investigation?.canExecute
     )
-      throw new Error("Investigation is not approved");
+      throw new Error("Investigation is not executable");
     return feedback.investigation;
   }
   if (name === "SAVE_EXECUTION_PROGRESS") {
