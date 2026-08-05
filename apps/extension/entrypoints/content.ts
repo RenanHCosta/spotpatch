@@ -108,8 +108,10 @@ class Inspector {
     document.documentElement.append(this.root);
     this.overlay = document.createElement("div");
     this.overlay.className = "outline";
+    this.overlay.style.display = "none";
     this.label = document.createElement("div");
     this.label.className = "label";
+    this.label.style.display = "none";
     this.countdown = document.createElement("div");
     this.countdown.className = "capture-countdown";
     const countdownValue = document.createElement("strong"),
@@ -403,6 +405,7 @@ class Inspector {
   }
   async loadMarkers(project: Project) {
     this.project = project;
+    this.stop();
     this.mount();
     this.closeMarkerCard();
     const ids = await this.ids(),

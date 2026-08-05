@@ -18,6 +18,10 @@ export function canTransition(from: FeedbackStatus, to: FeedbackStatus): boolean
 export function assertTransition(from: FeedbackStatus, to: FeedbackStatus): void {
   if (!canTransition(from, to)) throw new Error(`Invalid feedback transition: ${from} -> ${to}`);
 }
+export function assertFeedbackDeletionAllowed(runStatuses: readonly string[]): void {
+  if (runStatuses.some((status) => status === "queued" || status === "in_progress"))
+    throw new Error("Feedback cannot be deleted while an agent run is active");
+}
 export function investigationTarget(result: InvestigationResult): FeedbackStatus {
   if (result.requiresHumanInput) return "needs_information";
   return result.canExecute ? "queued_for_execution" : "needs_information";

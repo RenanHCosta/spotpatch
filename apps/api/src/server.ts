@@ -16,6 +16,7 @@ import {
   verifyAgentSignature,
 } from "@spotpatch/security";
 import {
+  assertFeedbackDeletionAllowed,
   assertTransition,
   investigationTarget,
   validateExecutionPolicy,
@@ -34,7 +35,7 @@ const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "Content-Type, X-SpotPatch-Admin-Token, X-SpotPatch-Agent-Timestamp, X-SpotPatch-Agent-Signature, Authorization, Idempotency-Key",
-  "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,PATCH,DELETE,OPTIONS",
 };
 function json(body: unknown, status = 200) {
   return NextResponse.json(body, { status, headers: cors });
@@ -225,6 +226,18 @@ async function handleAdmin(request: NextRequest, parts: string[]) {
       return json(ok({ viewportUrl, elementUrl, expiresIn: 300 }));
     }
     return json(ok(detail));
+  }
+  if (
+    request.method === "DELETE" &&
+    parts[0] === "feedback" &&
+    parts[1] &&
+    !parts[2]
+  ) {
+    const feedback = await store.getFeedback(parts[1]);
+    if (!feedback) return json(fail("FEEDBACK_NOT_FOUND", "Feedback não encontrado."), 404);
+    assertFeedbackDeletionAllowed(feedback.runs.map((run) => run.status));
+    await store.deleteFeedback(feedback.id);
+    return json(ok({ id: feedback.id }));
   }
   if (request.method === "POST" && parts[0] === "feedback" && parts[1]) {
     const id = parts[1],

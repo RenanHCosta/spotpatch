@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -165,6 +166,22 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
       ]);
     },
   });
+  const deleteFeedback = useMutation({
+    mutationFn: () =>
+      api<{ id: string }>("/api/admin/feedback/" + id, { method: "DELETE" }),
+    onSuccess: async () => {
+      client.setQueryData<Item[]>(["feedback"], (current) =>
+        current?.filter((item) => item.id !== id),
+      );
+      client.removeQueries({ queryKey: ["feedback", id], exact: true });
+      client.removeQueries({ queryKey: ["feedback-screenshots", id], exact: true });
+      onClose();
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["feedback"], exact: true }),
+        client.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
+    },
+  });
 
   useEffect(() => {
     const saved = Number(localStorage.getItem("spotpatch_detail_width"));
@@ -201,6 +218,9 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
   }
 
   const detail = query.data;
+  const deletionBlocked = detail?.runs.some(
+    (run) => run.status === "queued" || run.status === "in_progress",
+  );
   const panelStyle = { "--detail-width": width + "px" } as CSSProperties;
 
   return (
@@ -228,7 +248,22 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
           {detail ? "#" + String(detail.public_number).padStart(2, "0") : "carregando"}
         </span>
         <span className="ml-2 hidden font-mono text-[10px] text-mute-soft min-[640px]:inline">{Math.round(width)}px</span>
-        <button type="button" onClick={onClose} className="ml-auto grid size-7 place-items-center rounded-[4px] text-mute hover:bg-canvas" aria-label="Fechar detalhe">
+        {detail && (
+          <button
+            type="button"
+            disabled={deletionBlocked || deleteFeedback.isPending}
+            onClick={() => {
+              if (window.confirm(`Excluir o feedback #${String(detail.public_number).padStart(2, "0")} do board?`))
+                deleteFeedback.mutate();
+            }}
+            className="ml-auto grid size-7 place-items-center rounded-[4px] text-danger hover:bg-canvas disabled:cursor-not-allowed disabled:text-mute-soft"
+            aria-label="Excluir feedback do board"
+            title={deletionBlocked ? "Aguarde a execução ativa terminar" : "Excluir do board"}
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+        <button type="button" onClick={onClose} className="grid size-7 place-items-center rounded-[4px] text-mute hover:bg-canvas" aria-label="Fechar detalhe">
           <X size={16} />
         </button>
       </div>
@@ -282,7 +317,11 @@ function FeedbackPanel({ id, onClose }: { id: string; onClose: () => void }) {
               </ol>
             </section>
           </div>
-          {action.error && <div className="border-t border-danger px-3 py-2 text-[11.5px] text-danger">{action.error.message}</div>}
+          {(action.error || deleteFeedback.error) && (
+            <div className="border-t border-danger px-3 py-2 text-[11.5px] text-danger">
+              {action.error?.message || deleteFeedback.error?.message}
+            </div>
+          )}
           <div className="flex shrink-0 gap-2 border-t border-line bg-surface p-3">
             {canStartInvestigation(detail) && <button type="button" disabled={action.isPending} onClick={() => action.mutate("investigate")} className="h-9 flex-1 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover disabled:opacity-50">Investigar</button>}
             {detail.status === "pull_request_opened" && detail.execution?.pullRequestUrl && <a href={detail.execution.pullRequestUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-[4px] bg-accent px-3 font-semibold text-surface hover:bg-accent-hover">Abrir PR <ExternalLink size={14} /></a>}

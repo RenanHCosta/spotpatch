@@ -138,3 +138,91 @@ describe("SpotPatch administrative configuration", () => {
     expect(JSON.stringify(payload)).not.toContain("secret-value");
   });
 });
+
+describe("SpotPatch feedback deletion", () => {
+  const previousAdminToken = process.env.SPOTPATCH_ADMIN_TOKEN;
+
+  beforeEach(() => {
+    process.env.SPOTPATCH_ADMIN_TOKEN = "test-admin-token";
+  });
+
+  afterEach(() => {
+    if (previousAdminToken === undefined) delete process.env.SPOTPATCH_ADMIN_TOKEN;
+    else process.env.SPOTPATCH_ADMIN_TOKEN = previousAdminToken;
+  });
+
+  it("removes a feedback from administrative listings", async () => {
+    const createResponse = await handleApiRequest(
+      new NextRequest("http://localhost:3001/api/public/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idempotencyKey: crypto.randomUUID(),
+          projectId: "11111111-1111-4111-8111-111111111111",
+          comment: "Remover este feedback do board",
+          category: "visual_bug",
+          priority: "medium",
+          page: {
+            pageUrl: "http://localhost:3000/demo",
+            normalizedUrl: "http://localhost:3000/demo",
+            hostname: "localhost",
+            pathname: "/demo",
+            pageTitle: "Demo",
+            referrer: null,
+            userAgent: "Vitest",
+            timestamp: new Date().toISOString(),
+            viewport: { width: 1280, height: 720, devicePixelRatio: 1 },
+            scroll: { x: 0, y: 0 },
+            installationId: crypto.randomUUID(),
+            sessionId: crypto.randomUUID(),
+          },
+          element: {
+            tagName: "button",
+            textContent: "Comprar",
+            cssSelector: "button.buy",
+            xpath: "/html/body/button",
+            outerHTML: '<button class="buy">Comprar</button>',
+            attributes: { class: "buy" },
+            classList: ["buy"],
+            boundingBox: { x: 0, y: 0, top: 0, left: 0, width: 100, height: 40 },
+            computedStyles: { display: "block" },
+            parentContext: [],
+            nearbyText: "Comprar",
+            dataAgentId: null,
+          },
+        }),
+      }),
+      { params: Promise.resolve({ path: ["public", "feedback"] }) },
+    );
+    const created = await createResponse.json();
+    expect(createResponse.status).toBe(201);
+
+    const feedbackId = created.data.id as string;
+    const deleteResponse = await handleApiRequest(
+      new NextRequest(`http://localhost:3001/api/admin/feedback/${feedbackId}`, {
+        method: "DELETE",
+        headers: { "X-SpotPatch-Admin-Token": "test-admin-token" },
+      }),
+      { params: Promise.resolve({ path: ["admin", "feedback", feedbackId] }) },
+    );
+    expect(deleteResponse.status).toBe(200);
+    expect(await deleteResponse.json()).toEqual({ success: true, data: { id: feedbackId } });
+
+    const listResponse = await handleApiRequest(
+      new NextRequest("http://localhost:3001/api/admin/feedback", {
+        headers: { "X-SpotPatch-Admin-Token": "test-admin-token" },
+      }),
+      { params: Promise.resolve({ path: ["admin", "feedback"] }) },
+    );
+    const list = await listResponse.json();
+    expect(list.data).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: feedbackId })]));
+
+    const detailResponse = await handleApiRequest(
+      new NextRequest(`http://localhost:3001/api/admin/feedback/${feedbackId}`, {
+        headers: { "X-SpotPatch-Admin-Token": "test-admin-token" },
+      }),
+      { params: Promise.resolve({ path: ["admin", "feedback", feedbackId] }) },
+    );
+    expect(detailResponse.status).toBe(404);
+  });
+});

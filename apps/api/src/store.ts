@@ -30,6 +30,7 @@ export type FeedbackRecord = {
   scroll_position: unknown;
   screenshot_path: string | null;
   element_screenshot_path: string | null;
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
   element: FeedbackCreateInput["element"];
@@ -77,6 +78,7 @@ export interface SpotPatchStore {
   listPage(projectId: string, url: string): Promise<FeedbackRecord[]>;
   listFeedback(): Promise<FeedbackDetail[]>;
   getFeedback(id: string): Promise<FeedbackDetail | null>;
+  deleteFeedback(id: string): Promise<void>;
   transition(
     id: string,
     next: FeedbackStatus,
@@ -210,6 +212,7 @@ class MemoryStore implements SpotPatchStore {
       scroll_position: input.page.scroll,
       screenshot_path: input.screenshot ? `demo/${id}/viewport.png` : null,
       element_screenshot_path: input.elementScreenshot ? `demo/${id}/element.png` : null,
+      deleted_at: null,
       created_at: now(),
       updated_at: now(),
       element: input.element,
@@ -222,19 +225,20 @@ class MemoryStore implements SpotPatchStore {
   }
   async listPage(projectId: string, url: string) {
     return [...this.feedback.values()].filter(
-      (f) => f.project_id === projectId && f.normalized_url === url,
+      (f) => !f.deleted_at && f.project_id === projectId && f.normalized_url === url,
     );
   }
   async listFeedback() {
     return Promise.all(
       [...this.feedback.values()]
+        .filter((f) => !f.deleted_at)
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .map((f) => this.getFeedback(f.id) as Promise<FeedbackDetail>),
     );
   }
   async getFeedback(id: string) {
     const f = this.feedback.get(id);
-    if (!f) return null;
+    if (!f || f.deleted_at) return null;
     return {
       ...f,
       project: this.projects.find((p) => p.id === f.project_id)!,
@@ -245,6 +249,17 @@ class MemoryStore implements SpotPatchStore {
       runs: [...this.runs.values()].filter((v) => v.feedback_item_id === id),
       events: this.events.filter((v) => v.feedback_item_id === id),
     };
+  }
+  async deleteFeedback(id: string) {
+    const item = this.feedback.get(id);
+    if (!item || item.deleted_at) throw new Error("Feedback not found");
+    const deletedAt = now();
+    await this.addEvent(id, "operator", "Operador", "feedback_deleted", {
+      previousStatus: item.status,
+      deletedAt,
+    });
+    item.deleted_at = deletedAt;
+    item.updated_at = deletedAt;
   }
   async transition(
     id: string,
@@ -538,6 +553,7 @@ class SupabaseStore extends MemoryStore {
       .select("*")
       .eq("project_id", projectId)
       .eq("normalized_url", url)
+      .is("deleted_at", null)
       .order("created_at");
     if (error) throw error;
     return Promise.all((data as Record<string, unknown>[]).map((row) => this.hydrate(row)));
@@ -546,6 +562,7 @@ class SupabaseStore extends MemoryStore {
     const { data, error } = await getSupabase()
       .from("feedback_items")
       .select("id")
+      .is("deleted_at", null)
       .order("created_at", { ascending: false });
     if (error) throw error;
     const values = await Promise.all(
@@ -557,7 +574,12 @@ class SupabaseStore extends MemoryStore {
     const supabase = getSupabase();
     const [feedback, element, projects, investigations, executions, runs, events] =
       await Promise.all([
-        supabase.from("feedback_items").select("*").eq("id", id).maybeSingle(),
+        supabase
+          .from("feedback_items")
+          .select("*")
+          .eq("id", id)
+          .is("deleted_at", null)
+          .maybeSingle(),
         supabase.from("selected_elements").select("*").eq("feedback_item_id", id).maybeSingle(),
         supabase.from("projects").select("*"),
         supabase
@@ -596,6 +618,12 @@ class SupabaseStore extends MemoryStore {
       runs: (runs.data ?? []) as AgentRun[],
       events: (events.data ?? []) as EventRecord[],
     } as unknown as FeedbackDetail;
+  }
+  override async deleteFeedback(id: string) {
+    const { error } = await getSupabase().rpc("soft_delete_feedback", {
+      p_feedback_id: id,
+    });
+    if (error) throw error;
   }
   private mapInvestigation(row: Record<string, unknown>): InvestigationRecord {
     return {

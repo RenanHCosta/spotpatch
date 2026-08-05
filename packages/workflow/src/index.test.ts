@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertFeedbackDeletionAllowed,
   assertTransition,
   canTransition,
   investigationTarget,
@@ -10,6 +11,12 @@ describe("workflow", () => {
     expect(canTransition("new", "queued_for_investigation")).toBe(true));
   it("rejects direct status jumps", () =>
     expect(() => assertTransition("new", "executing")).toThrow());
+  it("allows deleting feedback without active agent runs", () =>
+    expect(() => assertFeedbackDeletionAllowed(["completed", "failed"])).not.toThrow());
+  it("blocks deleting feedback while an agent run is active", () =>
+    expect(() => assertFeedbackDeletionAllowed(["completed", "in_progress"])).toThrow(
+      "Feedback cannot be deleted while an agent run is active",
+    ));
   it("queues executable investigations automatically", () =>
     expect(
       investigationTarget({
