@@ -44,9 +44,23 @@ export default defineContentScript({
     });
   },
 });
+function selectableTargetAtPoint(x: number, y: number): Element | null {
+  const raw = document.elementFromPoint(x, y);
+  if (!raw) return null;
+  const target =
+    raw instanceof SVGElement
+      ? (raw.closest("button,a,[role='button']") ?? raw.ownerSVGElement ?? raw)
+      : raw;
+  return isSelectable(target) ? target : null;
+}
 class Inspector {
   private project: Project | null = null;
   private hovered: Element | null = null;
+  private onSelectionViewportChange = () => {
+    if (this.overlay) this.overlay.style.display = "none";
+    if (this.label) this.label.style.display = "none";
+    this.hovered = null;
+  };
   private root: HTMLDivElement | null = null;
   private shadow: ShadowRoot | null = null;
   private overlay: HTMLDivElement | null = null;
@@ -77,9 +91,9 @@ class Inspector {
     this.root.style.cssText =
       "all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none";
     this.shadow = this.root.attachShadow({ mode: "open" });
-    this.shadow.innerHTML = `<style>*{box-sizing:border-box;font-family:Inter,system-ui,sans-serif}.outline{position:fixed;border:2px solid #ec5b35;background:#ec5b3520;pointer-events:none}.label{position:fixed;max-width:280px;border-radius:6px;background:#101828;padding:6px 8px;color:white;font:700 11px system-ui;box-shadow:0 3px 10px #0003}.marker{position:fixed;display:grid;width:28px;height:28px;place-items:center;border:3px solid white;border-radius:50%;background:#ec5b35;color:white;font:800 11px system-ui;box-shadow:0 3px 12px #0005;pointer-events:auto;cursor:pointer}.marker.orphan{background:#667085}.card{position:fixed;width:340px;max-height:calc(100vh - 24px);overflow:auto;border:1px solid #d0d5dd;border-radius:14px;background:white;padding:16px;color:#101828;box-shadow:0 16px 50px #10182835;pointer-events:auto}.card h2{margin:0 0 4px;font-size:16px}.card p{margin:0 0 12px;color:#667085;font-size:12px}.preview{overflow:hidden;margin-bottom:12px;border-radius:8px;background:#f2f4f7;padding:9px;white-space:nowrap;text-overflow:ellipsis;font:600 11px monospace}.card textarea,.card input,.card select{width:100%;margin-top:5px;border:1px solid #d0d5dd;border-radius:7px;padding:8px;font-size:12px}.card textarea{min-height:90px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:block;margin-top:9px;color:#475467;font-size:10px;font-weight:800;text-transform:uppercase}.capture-preview{margin-top:14px;border-top:1px solid #e4e7ec;padding-top:12px}.capture-preview>strong{display:block;margin-bottom:8px;font-size:11px;text-transform:uppercase;color:#475467}.capture-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.capture-item{overflow:hidden;border:1px solid #e4e7ec;border-radius:8px;background:#f8fafc}.capture-item span{display:block;padding:6px 8px;font-size:10px;font-weight:800;color:#475467}.capture-item img{display:block;width:100%;height:104px;object-fit:contain;background:#eef2f6}.capture-item .capture-empty{display:grid;height:104px;place-items:center;padding:8px;text-align:center;font-size:10px;color:#667085}.capture-warning{margin:9px 0 0!important;border-radius:7px;background:#fffaeb;padding:8px;color:#93370d!important}.capture-countdown{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;color:#fff;text-align:center;text-shadow:0 3px 18px #0008}.capture-countdown strong{font:900 clamp(88px,22vw,180px)/.85 Inter,system-ui,sans-serif}.capture-countdown span{margin-top:20px;border-radius:999px;background:#101828dd;padding:9px 14px;font:800 12px Inter,system-ui,sans-serif}.actions{display:flex;gap:8px;margin-top:14px}.actions button{height:36px;flex:1;border:0;border-radius:7px;background:#101828;color:white;font-weight:800;cursor:pointer}.actions button:disabled{cursor:wait;opacity:.6}.actions .cancel,.actions .recapture{border:1px solid #d0d5dd;background:white;color:#344054}.error{margin-top:10px!important;color:#b42318!important}[hidden]{display:none!important}</style>`;
+    this.shadow.innerHTML = `<style>:host{--ink:oklch(0.16 0.006 264);--ink-soft:oklch(0.24 0.006 264);--mute:oklch(0.55 0.015 264);--mute-soft:oklch(0.71 0.013 264);--line:oklch(0.92 0.004 264);--surface:oklch(1 0 0);--canvas:oklch(0.985 0.002 264);--accent:oklch(0.6 0.15 149);--accent-hover:oklch(0.68 0.17 149);--accent-soft:oklch(0.95 0.045 149);--warn:oklch(0.72 0.13 80);--danger:oklch(0.55 0.16 27)}*{box-sizing:border-box;font-family:Inter,system-ui,sans-serif}.outline{position:fixed;border:2px solid var(--accent);background:color-mix(in oklch,var(--accent) 10%,transparent);pointer-events:none}.label{position:fixed;max-width:280px;border-radius:4px;background:var(--ink);padding:6px 8px;color:var(--surface);font:500 11px "JetBrains Mono",monospace;pointer-events:none}.marker{position:fixed;display:grid;width:28px;height:28px;place-items:center;border:2px solid var(--surface);border-radius:50%;background:var(--accent);color:var(--surface);font:600 11px "JetBrains Mono",monospace;pointer-events:auto;cursor:pointer}.marker.orphan{background:var(--mute)}.card{position:fixed;width:340px;max-height:calc(100vh - 24px);overflow:auto;border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:12px;color:var(--ink);pointer-events:auto}.card h2{margin:0 0 4px;font-size:13.5px}.card p{margin:0 0 12px;color:var(--mute);font-size:11.5px}.preview{overflow:hidden;margin-bottom:12px;border-block:1px solid var(--line);background:var(--canvas);padding:9px;white-space:nowrap;text-overflow:ellipsis;font:500 11px "JetBrains Mono",monospace}.card textarea,.card input,.card select{width:100%;margin-top:5px;border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:8px;color:var(--ink);font-size:12.5px;outline:none}.card textarea:focus,.card input:focus,.card select:focus{border-color:var(--accent)}.card textarea{min-height:90px;resize:vertical}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:block;margin-top:9px;color:var(--mute);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}.capture-preview{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}.capture-preview>strong{display:block;margin-bottom:8px;color:var(--mute);font-size:10px;letter-spacing:.08em;text-transform:uppercase}.capture-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.capture-item{overflow:hidden;border:1px solid var(--line);background:var(--canvas)}.capture-item span{display:block;padding:6px 8px;color:var(--mute);font-size:10px;font-weight:600}.capture-item img{display:block;width:100%;height:104px;object-fit:contain;background:var(--canvas)}.capture-item .capture-empty{display:grid;height:104px;place-items:center;padding:8px;text-align:center;font-size:10px;color:var(--mute-soft)}.capture-warning{margin:9px 0 0!important;border-top:1px solid var(--warn);padding:8px 0;color:var(--ink)!important}.capture-countdown{position:fixed;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;background:color-mix(in oklch,var(--surface) 12%,transparent);color:var(--ink);text-align:center}.capture-countdown strong{border:1px solid var(--line);background:var(--surface);padding:8px 12px;font:600 64px/1 "JetBrains Mono",monospace}.capture-countdown span{margin-top:12px;border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:9px 14px;font:600 12px Inter,system-ui,sans-serif}.actions{display:flex;gap:8px;margin-top:14px}.actions button{height:36px;flex:1;border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:var(--surface);font-weight:600;cursor:pointer}.actions button:hover{background:var(--accent-hover)}.actions button:disabled{cursor:wait;opacity:.6}.actions .cancel,.actions .recapture{border-color:var(--line);background:var(--surface);color:var(--ink)}.actions .cancel:hover,.actions .recapture:hover{background:var(--canvas)}.error{margin-top:10px!important;border-top:1px solid var(--danger);padding-top:8px;color:var(--danger)!important}[hidden]{display:none!important}</style>`;
     const markerCardStyle = document.createElement("style");
-    markerCardStyle.textContent = `.marker-card{position:fixed;width:300px;max-height:calc(100vh - 24px);overflow:auto;border:1px solid #d0d5dd;border-radius:14px;background:#fff;padding:16px;color:#101828;box-shadow:0 16px 50px #10182835;pointer-events:auto}.marker-card header{display:flex;align-items:center;justify-content:space-between;gap:12px}.marker-card header strong{font-size:14px}.marker-card .marker-close{display:grid;width:28px;height:28px;place-items:center;border:0;border-radius:7px;background:#f2f4f7;color:#475467;cursor:pointer}.marker-card .marker-comment{margin:14px 0;font-size:14px;line-height:1.5}.marker-card dl{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0}.marker-card dt{font-size:9px;font-weight:800;text-transform:uppercase;color:#667085}.marker-card dd{margin:3px 0 0;font-size:11px;font-weight:700;color:#344054}.marker-card a{display:block;margin-top:14px;border-radius:8px;background:#101828;padding:10px 12px;color:#fff;text-align:center;text-decoration:none;font-size:12px;font-weight:800}`;
+    markerCardStyle.textContent = `.marker-card{position:fixed;width:300px;max-height:calc(100vh - 24px);overflow:auto;border:1px solid var(--line);border-radius:4px;background:var(--surface);padding:12px;color:var(--ink);pointer-events:auto}.marker-card header{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:8px}.marker-card header strong{font-size:13.5px}.marker-card .marker-close{display:grid;width:28px;height:28px;place-items:center;border:0;border-radius:4px;background:var(--canvas);color:var(--mute);cursor:pointer}.marker-card .marker-comment{margin:12px 0;font-size:12.5px;line-height:1.5}.marker-card dl{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0;border-top:1px solid var(--line);padding-top:10px}.marker-card dt{font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}.marker-card dd{margin:3px 0 0;font:500 11px "JetBrains Mono",monospace;color:var(--ink)}.marker-card a{display:block;margin-top:14px;border-radius:4px;background:var(--accent);padding:10px 12px;color:var(--surface);text-align:center;text-decoration:none;font-size:12px;font-weight:600}`;
     this.shadow.append(markerCardStyle);
     document.documentElement.append(this.root);
     this.overlay = document.createElement("div");
@@ -106,20 +120,24 @@ class Inspector {
     addEventListener("mousemove", this.onMove, true);
     addEventListener("click", this.onClick, true);
     addEventListener("keydown", this.onKey, true);
+    addEventListener("scroll", this.onSelectionViewportChange, true);
+    addEventListener("resize", this.onSelectionViewportChange);
   }
   stop() {
     document.documentElement.style.cursor = "";
     removeEventListener("mousemove", this.onMove, true);
     removeEventListener("click", this.onClick, true);
     removeEventListener("keydown", this.onKey, true);
+    removeEventListener("scroll", this.onSelectionViewportChange, true);
+    removeEventListener("resize", this.onSelectionViewportChange);
     if (this.overlay) this.overlay.style.display = "none";
     if (this.label) this.label.style.display = "none";
     this.hovered = null;
   }
   onMove = (event: MouseEvent) => {
-    const target = event.composedPath().find((v) => v instanceof Element) as Element | undefined;
-    if (!target || !isSelectable(target)) {
-      if (this.overlay) this.overlay.style.display = "none";
+    const target = selectableTargetAtPoint(event.clientX, event.clientY);
+    if (!target) {
+      this.onSelectionViewportChange();
       return;
     }
     this.hovered = target;
@@ -134,15 +152,16 @@ class Inspector {
     this.label!.textContent = `${target.tagName.toLowerCase()} · ${(target.textContent || "").trim().slice(0, 35)} · ${Math.round(box.width)}×${Math.round(box.height)}`;
     Object.assign(this.label!.style, {
       display: "block",
-      left: `${Math.max(8, box.left)}px`,
-      top: `${Math.max(8, box.top - 30)}px`,
+      left: `${Math.min(Math.max(8, box.left), Math.max(8, innerWidth - 288))}px`,
+      top: `${box.top >= 36 ? box.top - 30 : Math.min(innerHeight - 30, box.bottom + 6)}px`,
     });
   };
   onClick = (event: MouseEvent) => {
     if (!this.hovered) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    const selected = this.hovered;
+    const selected = selectableTargetAtPoint(event.clientX, event.clientY) ?? this.hovered;
+    if (!selected) return;
     this.stop();
     void this.openForm(selected);
   };
@@ -317,6 +336,7 @@ class Inspector {
     recapture.disabled = true;
     form.querySelector(".error")?.remove();
     try {
+      const fallbackElement = captureElement(selectedElement);
       const ids = await this.ids();
       let draft: CaptureDraft | null = null;
       try {
@@ -324,8 +344,13 @@ class Inspector {
         else this.setCaptureMode("capturing");
         await waitForVisualUpdate();
         assertNotAborted(controller.signal);
-        const element = captureElement(selectedElement),
-          page = capturePage(ids.installationId, ids.sessionId);
+        let element: CapturedElementContext;
+        try {
+          element = captureElement(selectedElement);
+        } catch {
+          element = fallbackElement;
+        }
+        const page = capturePage(ids.installationId, ids.sessionId);
         let capture: CaptureResponse;
         try {
           capture = (await chrome.runtime.sendMessage({
@@ -450,7 +475,7 @@ function createMarkerCard(marker: Marker) {
   link.href = `${DASHBOARD}/backlog/${encodeURIComponent(marker.id)}`;
   link.target = "_blank";
   link.rel = "noreferrer";
-  link.textContent = "Abrir no dashboard ↗";
+  link.textContent = "Abrir no dashboard";
   card.append(header, comment, metadata, link);
   return card;
 }

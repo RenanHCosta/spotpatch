@@ -1,9 +1,8 @@
-"use client";
+﻿"use client";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Button, Card } from "@spotpatch/ui";
 import { api, tokenKey } from "@/lib/api";
-import { Target } from "lucide-react";
+
 export function AdminGate({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState(() =>
     typeof window === "undefined" ? "" : (sessionStorage.getItem(tokenKey) ?? ""),
@@ -14,20 +13,15 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     enabled: Boolean(token),
     retry: false,
   });
-  if (!token || query.isError)
+
+  if (!token || query.isError) {
     return (
-      <main className="grid min-h-screen place-items-center p-5">
-        <Card className="w-full max-w-md p-8">
-          <div className="mb-6 flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-xl bg-patch text-white">
-              <Target />
-            </span>
-            <div>
-              <h1 className="font-black">Acesso administrativo</h1>
-              <p className="text-sm text-slate-500">Proteção simplificada do MVP</p>
-            </div>
-          </div>
+      <main className="grid min-h-screen place-items-center bg-surface p-5">
+        <div className="w-full max-w-[320px]">
+          <p className="font-mono text-[13px] font-semibold">spotpatch</p>
+          <h1 className="mt-8 text-[13.5px] font-semibold">Acesso administrativo</h1>
           <form
+            className="mt-5"
             onSubmit={(event) => {
               event.preventDefault();
               const value = new FormData(event.currentTarget).get("token")?.toString() ?? "";
@@ -35,7 +29,10 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
               setToken(value);
             }}
           >
-            <label htmlFor="spotpatch-admin-token" className="text-sm font-semibold">
+            <label
+              htmlFor="spotpatch-admin-token"
+              className="text-[10px] font-semibold uppercase tracking-[0.08em] text-mute"
+            >
               SPOTPATCH_ADMIN_TOKEN
             </label>
             <input
@@ -43,22 +40,36 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
               name="token"
               type="password"
               autoFocus
-              className="mt-2 h-11 w-full rounded-lg border border-slate-300 px-3"
+              aria-invalid={query.isError}
+              className="mt-2 h-9 w-full rounded-[4px] border border-line bg-surface px-3 font-mono text-[11.5px] text-ink"
             />
-            <Button className="mt-4 w-full">Entrar</Button>
+            {query.isError && (
+              <p className="mt-2 text-[11.5px] text-danger">Token inválido. Verifique e tente novamente.</p>
+            )}
+            <button
+              className="mt-4 h-9 w-full rounded-[4px] bg-accent font-semibold text-surface transition-colors duration-100 hover:bg-accent-hover"
+              type="submit"
+            >
+              Entrar
+            </button>
           </form>
-          <p className="mt-4 text-xs leading-5 text-slate-500">
-            O token fica somente no sessionStorage e não representa autenticação pronta para
-            produção.
+          <p className="mt-4 text-[11.5px] leading-5 text-mute">
+            O token permanece somente nesta sessão.
           </p>
-        </Card>
+        </div>
       </main>
     );
-  if (query.isLoading)
+  }
+
+  if (query.isLoading) {
     return (
-      <main className="grid min-h-screen place-items-center text-sm text-slate-500">
-        Validando acesso…
+      <main className="mx-auto min-h-screen max-w-[560px] bg-surface pt-24">
+        <div className="h-9 border border-line bg-canvas" />
+        <div className="mt-2 h-9 border border-line bg-canvas" />
+        <div className="mt-2 h-9 border border-line bg-canvas" />
       </main>
     );
+  }
+
   return children;
 }

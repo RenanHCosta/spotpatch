@@ -1,53 +1,41 @@
-import { AdminPage } from "@/components/page";
-import { Badge, Card } from "@spotpatch/ui";
-import { Cable, Database, GitPullRequest } from "lucide-react";
+﻿import { AdminPage } from "@/components/page";
+import { ArrowUpRight } from "lucide-react";
+
+const integrations = [
+  { name: "Supabase", description: "Registro principal e screenshots privados", status: "servidor" },
+  { name: "Deco Studio", description: "Threads, agentes e observabilidade", status: "configurável" },
+  { name: "GitHub", description: "Connection gerenciada no Deco Studio", status: "não armazenado" },
+];
+
 export default function Integrations() {
   return (
     <AdminPage>
-      <header>
-        <p className="text-sm font-semibold text-patch">CONEXÕES</p>
-        <h1 className="mt-1 text-3xl font-black">Integrações</h1>
-      </header>
-      <div className="mt-7 grid gap-4 md:grid-cols-3">
-        {[
-          {
-            name: "Supabase",
-            description: "Registro principal e screenshots privados",
-            icon: Database,
-            status: "Servidor",
-          },
-          {
-            name: "Deco Studio",
-            description: "Threads, agentes e observabilidade",
-            icon: Cable,
-            status: "Configurável",
-          },
-          {
-            name: "GitHub",
-            description: "Connection gerenciada no Deco Studio",
-            icon: GitPullRequest,
-            status: "Não armazenado",
-          },
-        ].map(({ name, description, icon: Icon, status }) => (
-          <Card key={name} className="p-6">
-            <span className="grid size-10 place-items-center rounded-xl bg-slate-100">
-              <Icon size={20} />
-            </span>
-            <div className="mt-5 flex items-center justify-between">
-              <h2 className="font-bold">{name}</h2>
-              <Badge>{status}</Badge>
+      <div className="min-h-[calc(100vh-104px)] bg-surface">
+        <header className="flex h-9 items-center border-b border-line px-3">
+          <h1 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-mute">Integrações</h1>
+          <span className="ml-auto font-mono text-[11px] text-mute-soft">03 conexões</span>
+        </header>
+        <div className="divide-y divide-line">
+          {integrations.map((integration) => (
+            <div key={integration.name} className="flex min-h-14 items-center gap-4 px-3 py-2.5 hover:bg-canvas">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-[12.5px] font-semibold">{integration.name}</h2>
+                <p className="mt-0.5 truncate text-[11.5px] text-mute">{integration.description}</p>
+              </div>
+              <span className="hidden items-center gap-1.5 text-[11.5px] text-mute sm:inline-flex">
+                <span className="size-1.5 rounded-full bg-accent" />
+                {integration.status}
+              </span>
+              <button type="button" className="grid size-7 place-items-center rounded-[4px] text-mute hover:bg-surface" aria-label={`Abrir ${integration.name}`}>
+                <ArrowUpRight size={14} />
+              </button>
             </div>
-            <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
-          </Card>
-        ))}
+          ))}
+        </div>
+        <div className="border-y border-line bg-accent-soft px-3 py-3 text-[12.5px] leading-5 text-ink">
+          <strong>Secrets permanecem no servidor.</strong> A Deco API key, service role, credencial das tools e credenciais do GitHub nunca são enviadas ao dashboard ou à extensão.
+        </div>
       </div>
-      <Card className="mt-6 border-amber-200 bg-amber-50 p-6">
-        <h2 className="font-bold text-amber-900">Segredos permanecem no servidor</h2>
-        <p className="mt-2 text-sm leading-6 text-amber-800">
-          A Deco API key, service role, credencial das tools e credenciais do GitHub nunca são
-          enviadas ao dashboard ou à extensão.
-        </p>
-      </Card>
     </AdminPage>
   );
 }

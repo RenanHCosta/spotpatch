@@ -1,10 +1,12 @@
-import { Slot } from "@radix-ui/react-slot";
+﻿import { Slot } from "@radix-ui/react-slot";
 import clsx, { type ClassValue } from "clsx";
 import type { ButtonHTMLAttributes, HTMLAttributes } from "react";
 import { twMerge } from "tailwind-merge";
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
 export function Button({
   className,
   asChild = false,
@@ -14,26 +16,23 @@ export function Button({
   return (
     <Component
       className={cn(
-        "inline-flex h-10 items-center justify-center rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex h-9 items-center justify-center rounded-[4px] bg-accent px-3 text-[12.5px] font-semibold text-surface transition-colors duration-100 hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...props}
     />
   );
 }
+
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      className={cn("rounded-xl border border-slate-200 bg-white shadow-sm", className)}
-      {...props}
-    />
-  );
+  return <div className={cn("border border-line bg-surface", className)} {...props} />;
 }
+
 export function Badge({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
   return (
     <span
       className={cn(
-        "inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700",
+        "inline-flex rounded-[4px] border border-line bg-canvas px-2 py-0.5 font-mono text-[11px] text-mute",
         className,
       )}
       {...props}

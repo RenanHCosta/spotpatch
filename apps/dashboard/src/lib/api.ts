@@ -1,4 +1,4 @@
-const BASE = process.env.NEXT_PUBLIC_SPOTPATCH_API_URL || "http://localhost:3001";
+﻿const BASE = (process.env.NEXT_PUBLIC_SPOTPATCH_API_URL || "http://localhost:3001").replace(/\/+$/, "");
 export const tokenKey = "spotpatch_admin_token";
 export async function api<T>(path: string, init: RequestInit = {}) {
   const token = typeof window !== "undefined" ? sessionStorage.getItem(tokenKey) : null;
@@ -23,3 +23,4 @@ export async function api<T>(path: string, init: RequestInit = {}) {
 export function publicApiUrl(path: string) {
   return `${BASE}${path}`;
 }
+

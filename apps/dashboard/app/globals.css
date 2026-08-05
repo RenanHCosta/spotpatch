@@ -1,25 +1,61 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-mute: var(--mute);
+  --color-mute-soft: var(--mute-soft);
+  --color-line: var(--line);
+  --color-surface: var(--surface);
+  --color-canvas: var(--canvas);
+  --color-accent: var(--accent-green);
+  --color-accent-hover: var(--accent-green-hover);
+  --color-accent-soft: var(--accent-green-soft);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
 :root {
   color-scheme: light;
+  --ink: oklch(0.16 0.006 264);
+  --ink-soft: oklch(0.24 0.006 264);
+  --mute: oklch(0.55 0.015 264);
+  --mute-soft: oklch(0.71 0.013 264);
+  --line: oklch(0.92 0.004 264);
+  --surface: oklch(1 0 0);
+  --canvas: oklch(0.985 0.002 264);
+  --accent-green: oklch(0.6 0.15 149);
+  --accent-green-hover: oklch(0.68 0.17 149);
+  --accent-green-soft: oklch(0.95 0.045 149);
+  --warn: oklch(0.72 0.13 80);
+  --danger: oklch(0.55 0.16 27);
 }
-* {
-  box-sizing: border-box;
-}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
 body {
   margin: 0;
-  background: #f6f7f9;
-  color: #101828;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  font-size: 12.5px;
 }
-button,
-input,
-select,
-textarea {
-  font: inherit;
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea, [tabindex]:not([tabindex="-1"]) { outline: none; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible, [tabindex]:not([tabindex="-1"]):focus-visible {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-green);
 }
-.spot-grid {
-  background-image: radial-gradient(#d0d5dd 1px, transparent 1px);
-  background-size: 20px 20px;
+::selection { background: var(--accent-green-soft); }
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.line-clamp-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
