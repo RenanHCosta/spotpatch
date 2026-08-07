@@ -145,6 +145,21 @@ describe("SpotPatch administrative configuration", () => {
     });
     expect(JSON.stringify(payload)).not.toContain("secret-value");
   });
+
+  it("identifies an invalid administrative token as unauthorized", async () => {
+    const response = await handleApiRequest(
+      new NextRequest("http://localhost:3001/api/admin/dashboard", {
+        headers: { "X-SpotPatch-Admin-Token": "wrong-token" },
+      }),
+      { params: Promise.resolve({ path: ["admin", "dashboard"] }) },
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: { code: "UNAUTHORIZED" },
+    });
+  });
 });
 
 describe("SpotPatch feedback deletion", () => {
@@ -223,7 +238,9 @@ describe("SpotPatch feedback deletion", () => {
       { params: Promise.resolve({ path: ["admin", "feedback"] }) },
     );
     const list = await listResponse.json();
-    expect(list.data).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: feedbackId })]));
+    expect(list.data).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: feedbackId })]),
+    );
 
     const detailResponse = await handleApiRequest(
       new NextRequest(`http://localhost:3001/api/admin/feedback/${feedbackId}`, {

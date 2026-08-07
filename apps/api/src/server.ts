@@ -53,14 +53,17 @@ const routeError = (error: unknown, requestId: string) => {
       error: message.slice(0, 500),
     }),
   );
-  const status = /not found/i.test(message)
-    ? 404
-    : /Invalid|cannot|requires|missing|configured|match|transition|risk/i.test(message)
-      ? 409
-      : 500;
+  const unauthorized = message === "Invalid administrative token";
+  const status = unauthorized
+    ? 401
+    : /not found/i.test(message)
+      ? 404
+      : /Invalid|cannot|requires|missing|configured|match|transition|risk/i.test(message)
+        ? 409
+        : 500;
   return json(
     fail(
-      status === 500 ? "INTERNAL_ERROR" : "INVALID_STATE",
+      unauthorized ? "UNAUTHORIZED" : status === 500 ? "INTERNAL_ERROR" : "INVALID_STATE",
       status === 500 ? "Não foi possível concluir a operação." : message,
     ),
     status,
@@ -229,12 +232,7 @@ async function handleAdmin(request: NextRequest, parts: string[]) {
     }
     return json(ok(detail));
   }
-  if (
-    request.method === "DELETE" &&
-    parts[0] === "feedback" &&
-    parts[1] &&
-    !parts[2]
-  ) {
+  if (request.method === "DELETE" && parts[0] === "feedback" && parts[1] && !parts[2]) {
     const feedback = await store.getFeedback(parts[1]);
     if (!feedback) return json(fail("FEEDBACK_NOT_FOUND", "Feedback não encontrado."), 404);
     assertFeedbackDeletionAllowed(feedback.runs.map((run) => run.status));
