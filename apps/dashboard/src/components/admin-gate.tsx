@@ -1,7 +1,7 @@
 ﻿"use client";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, tokenKey } from "@/lib/api";
+import { ApiError, api, tokenKey } from "@/lib/api";
 
 export function AdminGate({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState(() =>
@@ -11,8 +11,11 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     queryKey: ["admin-check", token],
     queryFn: () => api("/api/admin/dashboard"),
     enabled: Boolean(token),
-    retry: false,
+    retry: (failureCount, error) =>
+      (!(error instanceof ApiError) || error.status >= 500) && failureCount < 2,
   });
+
+  const unauthorized = query.error instanceof ApiError && query.error.status === 401;
 
   if (!token || query.isError) {
     return (
@@ -26,7 +29,8 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
               event.preventDefault();
               const value = new FormData(event.currentTarget).get("token")?.toString() ?? "";
               sessionStorage.setItem(tokenKey, value);
-              setToken(value);
+              if (value === token) void query.refetch();
+              else setToken(value);
             }}
           >
             <label
@@ -40,11 +44,15 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
               name="token"
               type="password"
               autoFocus
-              aria-invalid={query.isError}
+              aria-invalid={unauthorized}
               className="mt-2 h-9 w-full rounded-[4px] border border-line bg-surface px-3 font-mono text-[11.5px] text-ink"
             />
             {query.isError && (
-              <p className="mt-2 text-[11.5px] text-danger">Token inválido. Verifique e tente novamente.</p>
+              <p className="mt-2 text-[11.5px] text-danger">
+                {unauthorized
+                  ? "Token inválido. Verifique e tente novamente."
+                  : "Não foi possível validar o acesso agora. Tente novamente."}
+              </p>
             )}
             <button
               className="mt-4 h-9 w-full rounded-[4px] bg-accent font-semibold text-surface transition-colors duration-100 hover:bg-accent-hover"
@@ -61,12 +69,16 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (query.isLoading) {
+  if (query.isPending) {
     return (
-      <main className="mx-auto min-h-screen max-w-[560px] bg-surface pt-24">
-        <div className="h-9 border border-line bg-canvas" />
-        <div className="mt-2 h-9 border border-line bg-canvas" />
-        <div className="mt-2 h-9 border border-line bg-canvas" />
+      <main className="grid min-h-screen place-items-center bg-surface p-5" aria-busy="true">
+        <div className="flex items-center gap-2 font-mono text-[11.5px] text-mute" role="status">
+          <span className="relative flex size-2.5" aria-hidden="true">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-accent opacity-40" />
+            <span className="relative inline-flex size-2.5 rounded-full bg-accent" />
+          </span>
+          Validando acesso…
+        </div>
       </main>
     );
   }
